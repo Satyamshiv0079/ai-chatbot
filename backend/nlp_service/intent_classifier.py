@@ -42,12 +42,13 @@ def train_model():
     )
 
     dataset = IntentDataset(training_data, tokenizer)
-    loader = DataLoader(dataset, batch_size=4, shuffle=True)
-    optimizer = AdamW(model.parameters(), lr=2e-5)
+    loader = DataLoader(dataset, batch_size=16, shuffle=True)
+    optimizer = AdamW(model.parameters(), lr=3e-5)
 
+    EPOCHS = 5
     print("Training started...")
     model.train()
-    for epoch in range(10):
+    for epoch in range(EPOCHS):
         total_loss = 0
         for batch in loader:
             optimizer.zero_grad()
@@ -60,7 +61,7 @@ def train_model():
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
-        print(f"Epoch {epoch+1}/10 — Loss: {total_loss:.4f}")
+        print(f"Epoch {epoch+1}/{EPOCHS} — Loss: {total_loss:.4f}")
 
     # Save the model
     os.makedirs("model", exist_ok=True)

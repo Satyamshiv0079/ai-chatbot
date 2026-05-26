@@ -67,4 +67,4 @@ def get_history(session_id):
     return jsonify({"history": session["history"]})
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(host='localhost', debug=False, port=8000)
