@@ -2,6 +2,8 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import sys
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
 # Fix the path so Python can find nlp_service and dialog_service
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -18,7 +20,7 @@ nlp = NLPPredictor(model_path=os.path.join(os.path.dirname(__file__), '..', 'nlp
 dialog = DialogManager()
 
 # Groq client
-groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+groq_client = None
 
 GROQ_MODELS = {
     "llama3-70b": "llama-3.3-70b-versatile",
@@ -49,10 +51,8 @@ def chat():
     user_message = data['message']
     session_id = data.get('session_id', None)
 
-    # Step 1: NLP processes the message
     nlp_result = nlp.process(user_message)
 
-    # Step 2: Dialog manager generates response
     dialog_result = dialog.handle(
         session_id=session_id,
         intent=nlp_result['intent'],
@@ -71,13 +71,17 @@ def chat():
 
 @app.route('/chat/groq', methods=['POST'])
 def chat_groq():
+    global groq_client
+    if groq_client is None:
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            return jsonify({"error": "Groq API key not configured"}), 500
+        groq_client = Groq(api_key=api_key)
+
     data = request.get_json()
 
     if not data or 'message' not in data:
         return jsonify({"error": "No message provided"}), 400
-
-    if not os.environ.get("GROQ_API_KEY"):
-        return jsonify({"error": "Groq API key not configured"}), 500
 
     user_message = data['message']
     history = data.get('history', [])

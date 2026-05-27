@@ -7,4 +7,5 @@ node_modules/
 build/
 .DS_Store
 backend/nlp_service/model/
-*.log
+*.log/
+.config/".config/" 
