@@ -1,11 +1,34 @@
+# Virtual Environments
 venv/
+backend/venv/
+.venv/
+
+# Python Cache
 __pycache__/
 *.pyc
 *.pyo
-.env
+*.pyd
+
+# Node.js
 node_modules/
-build/
+frontend/node_modules/
+frontend/dist/
+
+# SQLite Database
+*.db
+backend/dialog_service/history.db
+
+# Secrets and Environment Variables
+.env
+.env.local
+
+# IDE and OS files
 .DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.config/
+
+# BERT Model weights (both root and backend locations)
+model/
 backend/nlp_service/model/
-*.log/
-.config/".config/" 

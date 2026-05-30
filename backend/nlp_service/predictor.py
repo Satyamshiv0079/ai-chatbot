@@ -39,9 +39,14 @@ class NLPPredictor:
 
     def extract_entities(self, text):
         entities = {}
-        order_match = re.search(r'#?(\d{4,6})', text)
+        # Advanced regex pattern capturing: order-12345, order id 12345, #12345, ORD12345, or a standalone 4-6 digit number
+        pattern = r'(?:order|purchase|tracking)[-_\s]*(?:id|number|num|#)?\s*(\d{4,6})|ORD[-_\s]*(\d{4,6})|#\s*(\d{4,6})|\b(\d{4,6})\b'
+        order_match = re.search(pattern, text, re.IGNORECASE)
         if order_match:
-            entities["order_id"] = order_match.group(1)
+            # Find the non-empty captured group
+            order_id = next((g for g in order_match.groups() if g is not None), None)
+            if order_id:
+                entities["order_id"] = order_id
         return entities
 
     def process(self, text):

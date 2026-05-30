@@ -95,3 +95,28 @@ def test_multi_turn_context(client):
     history = client.get(f'/history/{session}')
     assert len(history.json['history']) == 2
     print("✓ Multi-turn conversation working")
+
+def test_dialog_fsm_slot_filling(client):
+    # 1. Create session
+    session = client.post('/session/new').json['session_id']
+    
+    # 2. Trigger check order status without providing the order ID
+    res1 = client.post('/chat',
+        json={"message": "Where is my order?", "session_id": session},
+        content_type='application/json'
+    )
+    assert res1.status_code == 200
+    assert "provide your order number" in res1.json['bot_response']
+    assert res1.json['engine'] == 'support_engine'
+    
+    # 3. Supply the order ID on the next turn
+    res2 = client.post('/chat',
+        json={"message": "12345", "session_id": session},
+        content_type='application/json'
+    )
+    assert res2.status_code == 200
+    # Auto-routing should have executed and returned actual database status for #12345!
+    assert "Shipped" in res2.json['bot_response']
+    assert "Tomorrow by 8 PM" in res2.json['bot_response']
+    assert res2.json['engine'] == 'support_engine'
+    print("✓ FSM Dialog Slot-filling working perfectly")
