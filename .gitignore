@@ -32,3 +32,6 @@ Thumbs.db
 # BERT Model weights (both root and backend locations)
 model/
 backend/nlp_service/model/
+
+# Local Package Manager configurations
+pyproject.toml
