@@ -109,29 +109,29 @@ class ConversationState:
                 "SELECT session_id, created_at, current_intent FROM sessions ORDER BY created_at DESC"
             ).fetchall()
             
-        sessions_list = []
-        for row in rows:
-            # Fetch last user query as the title if available
-            last_msg = conn.execute(
-                "SELECT user_text FROM messages WHERE session_id = ? ORDER BY id ASC LIMIT 1",
-                (row["session_id"],)
-            ).fetchone()
-            
-            title = last_msg["user_text"] if last_msg else "New Conversation"
-            if len(title) > 25:
-                title = title[:22] + "..."
+            sessions_list = []
+            for row in rows:
+                # Fetch first user query as the title if available
+                last_msg = conn.execute(
+                    "SELECT user_text FROM messages WHERE session_id = ? ORDER BY id ASC LIMIT 1",
+                    (row["session_id"],)
+                ).fetchone()
                 
-            try:
-                dt = datetime.fromisoformat(row["created_at"])
-                time_str = dt.strftime("%I:%M %p").lower()
-            except Exception:
-                time_str = "12:00 am"
-                
-            sessions_list.append({
-                "id": row["session_id"],
-                "title": title,
-                "timestamp": time_str
-            })
+                title = last_msg["user_text"] if last_msg else "New Conversation"
+                if len(title) > 25:
+                    title = title[:22] + "..."
+                    
+                try:
+                    dt = datetime.fromisoformat(row["created_at"])
+                    time_str = dt.strftime("%I:%M %p").lower()
+                except Exception:
+                    time_str = "12:00 am"
+                    
+                sessions_list.append({
+                    "id": row["session_id"],
+                    "title": title,
+                    "timestamp": time_str
+                })
         return sessions_list
 
     def create_session(self):
