@@ -71,11 +71,29 @@ export default function App() {
   }
 
   // Session history helpers
-  const loadLocalSessions = () => {
+  const loadLocalSessions = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/sessions`, { headers: getHeaders() })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.sessions) {
+          setSessionsList(data.sessions)
+          localStorage.setItem('novamind_sessions', JSON.stringify(data.sessions))
+          return data.sessions
+        }
+      }
+    } catch (e) {
+      console.error('Session history fetch error:', e)
+    }
+
+    // Fallback to localStorage
     const stored = localStorage.getItem('novamind_sessions')
     if (stored) {
-      setSessionsList(JSON.parse(stored))
+      const parsed = JSON.parse(stored)
+      setSessionsList(parsed)
+      return parsed
     }
+    return []
   }
 
   const startNewSession = async () => {
@@ -88,16 +106,6 @@ export default function App() {
       setSessionId(newId)
       localStorage.setItem('novamind_active_session', newId)
       
-      const newSessionItem = {
-        id: newId,
-        title: 'New Conversation',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }
-      
-      const updatedList = [newSessionItem, ...sessionsList]
-      setSessionsList(updatedList)
-      localStorage.setItem('novamind_sessions', JSON.stringify(updatedList))
-      
       setMessages([
         { 
           role: 'bot', 
@@ -105,6 +113,9 @@ export default function App() {
           engine: 'support_engine' 
         }
       ])
+      
+      // Sync sessions with backend
+      await loadLocalSessions()
     } catch (e) {
       console.error('Session creation error:', e)
     } finally {
@@ -197,6 +208,9 @@ export default function App() {
           engine: data.engine,
           model: data.model
         }])
+        
+        // Sync sessions with backend to fetch correct database-backed titles and timestamps
+        await loadLocalSessions()
       }
     } catch (e) {
       setMessages(prev => [...prev, { role: 'bot', text: 'Could not connect to the gateway. Please retry.', engine: 'fallback_engine' }])

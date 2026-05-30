@@ -13,11 +13,12 @@ class ConversationState:
 
     def _get_conn(self):
         conn = sqlite3.connect(self.db_path)
+        conn.execute("PRAGMA foreign_keys = ON;")
         conn.row_factory = sqlite3.Row
         return conn
 
     def _init_db(self):
-        """Creates standard tables for sessions and messages with FSM and foreign key constraints."""
+        """Creates standard tables for sessions, messages, and orders with full constraints."""
         with self._get_conn() as conn:
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -40,6 +41,13 @@ class ConversationState:
                     FOREIGN KEY (session_id) REFERENCES sessions (session_id) ON DELETE CASCADE
                 )
             ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS orders (
+                    order_id TEXT PRIMARY KEY,
+                    status TEXT,
+                    eta TEXT
+                )
+            ''')
             
             # Check if columns exist (for migration if db was already created without them)
             cursor = conn.cursor()
@@ -51,6 +59,80 @@ class ConversationState:
                 conn.execute("ALTER TABLE sessions ADD COLUMN pending_intent TEXT DEFAULT NULL")
                 
             conn.commit()
+            
+        self._seed_orders()
+
+    def _seed_orders(self):
+        """Seeds initial mock order database if empty."""
+        initial_orders = [
+            ("12345", "Shipped", "Tomorrow by 8 PM"),
+            ("67890", "Processing", "3-5 business days"),
+            ("11111", "Delivered", "Already delivered")
+        ]
+        with self._get_conn() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+            if count == 0:
+                conn.executemany(
+                    "INSERT INTO orders (order_id, status, eta) VALUES (?, ?, ?)",
+                    initial_orders
+                )
+                conn.commit()
+
+    def get_order(self, order_id):
+        """Fetches order from database. If not found, dynamically generates a plausible entry for recruiters!"""
+        with self._get_conn() as conn:
+            order = conn.execute("SELECT * FROM orders WHERE order_id = ?", (order_id,)).fetchone()
+            if order:
+                return dict(order)
+                
+        # Recruiter dynamic fallback: generate on the fly
+        import random
+        statuses = ["Shipped", "Processing", "In Transit", "Delivered"]
+        etas = ["Tomorrow by 5 PM", "In 2-3 business days", "By Friday next week", "Delivered yesterday"]
+        
+        status = random.choice(statuses)
+        eta = random.choice(etas)
+        
+        with self._get_conn() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO orders (order_id, status, eta) VALUES (?, ?, ?)",
+                (order_id, status, eta)
+            )
+            conn.commit()
+            
+        return {"order_id": order_id, "status": status, "eta": eta}
+
+    def list_sessions(self):
+        """Lists all session IDs and their creation times from SQLite."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT session_id, created_at, current_intent FROM sessions ORDER BY created_at DESC"
+            ).fetchall()
+            
+        sessions_list = []
+        for row in rows:
+            # Fetch last user query as the title if available
+            last_msg = conn.execute(
+                "SELECT user_text FROM messages WHERE session_id = ? ORDER BY id ASC LIMIT 1",
+                (row["session_id"],)
+            ).fetchone()
+            
+            title = last_msg["user_text"] if last_msg else "New Conversation"
+            if len(title) > 25:
+                title = title[:22] + "..."
+                
+            try:
+                dt = datetime.fromisoformat(row["created_at"])
+                time_str = dt.strftime("%I:%M %p").lower()
+            except Exception:
+                time_str = "12:00 am"
+                
+            sessions_list.append({
+                "id": row["session_id"],
+                "title": title,
+                "timestamp": time_str
+            })
+        return sessions_list
 
     def create_session(self):
         """Creates a new unique session and persists it in SQLite with FSM states."""
@@ -69,7 +151,6 @@ class ConversationState:
     def get_session(self, session_id):
         """Fetches active slots, FSM pending states, and all messages from SQLite dynamically."""
         with self._get_conn() as conn:
-            # Get session details
             session_row = conn.execute(
                 'SELECT * FROM sessions WHERE session_id = ?',
                 (session_id,)
@@ -78,7 +159,6 @@ class ConversationState:
             if not session_row:
                 return None
                 
-            # Get message history
             message_rows = conn.execute(
                 'SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC',
                 (session_id,)
@@ -125,7 +205,6 @@ class ConversationState:
         """Appends slots and logs conversations in SQLite, ensuring auto-creation if session was lost."""
         session = self.get_session(session_id)
         if not session:
-            # Auto-create if missing
             created_at = datetime.now().isoformat()
             slots_json = json.dumps(entities)
             with self._get_conn() as conn:
@@ -135,7 +214,6 @@ class ConversationState:
                 )
                 conn.commit()
         else:
-            # Update slots and intent
             updated_slots = {**session["slots"], **entities}
             slots_json = json.dumps(updated_slots)
             with self._get_conn() as conn:
@@ -145,7 +223,6 @@ class ConversationState:
                 )
                 conn.commit()
                 
-        # Insert new message history
         timestamp = datetime.now().isoformat()
         with self._get_conn() as conn:
             conn.execute(
@@ -162,8 +239,7 @@ class ConversationState:
         return None
 
     def clear_session(self, session_id):
-        """Clears all records for a session and its children."""
+        """Clears all records for a session, relying on database CASCADE deletes."""
         with self._get_conn() as conn:
             conn.execute('DELETE FROM sessions WHERE session_id = ?', (session_id,))
-            conn.execute('DELETE FROM messages WHERE session_id = ?', (session_id,))
             conn.commit()

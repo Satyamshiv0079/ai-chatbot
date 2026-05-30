@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import sys
 import os
+import threading
 from functools import wraps
 from dotenv import load_dotenv
 load_dotenv()
@@ -12,6 +13,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from nlp_service.predictor import NLPPredictor
 from dialog_service.dialog_manager import DialogManager
 from groq import Groq
+
+groq_lock = threading.Lock()
 
 app = Flask(__name__)
 
@@ -74,10 +77,18 @@ def new_session():
 def get_groq_client():
     global groq_client
     if groq_client is None:
-        api_key = os.environ.get("GROQ_API_KEY")
-        if api_key:
-            groq_client = Groq(api_key=api_key)
+        with groq_lock:
+            if groq_client is None:
+                api_key = os.environ.get("GROQ_API_KEY")
+                if api_key:
+                    groq_client = Groq(api_key=api_key)
     return groq_client
+
+@app.route('/sessions', methods=['GET'])
+@require_api_token
+def list_sessions():
+    sessions = dialog.state.list_sessions()
+    return jsonify({"sessions": sessions})
 
 @app.route('/chat', methods=['POST'])
 @require_api_token
@@ -206,16 +217,14 @@ def chat():
 
     # 2. Check routing condition
     has_order_id = bool(entities.get("order_id"))
-    is_testing = app.config.get('TESTING', False)
 
     # We route directly to the local Dialog Manager if:
-    # 1. We are in testing mode (pytest)
-    # 2. Or, the user is actively supplying slot input to fill a pending FSM slot (is_filling_slot)
-    # 3. Or, the BERT intent classifier has high confidence for a support action
-    # 4. Or, we have an order ID and a support intent
+    # 1. The user is actively supplying slot input to fill a pending FSM slot (is_filling_slot)
+    # 2. Or, the intent classifier has high confidence for a support action
+    # 3. Or, we have an order ID and a support intent
     is_filling_slot = (pending_slot is not None and has_order_id)
     
-    if is_testing or is_filling_slot or (confidence >= 0.65 and intent in support_intents) or (has_order_id and intent in ['check_order_status', 'cancel_order', 'request_refund']):
+    if is_filling_slot or (confidence >= 0.65 and intent in support_intents) or (has_order_id and intent in ['check_order_status', 'cancel_order', 'request_refund']):
         # High confidence support query or transactional query with order ID -> local Dialog Manager
         dialog_result = dialog.handle(
             session_id=session_id,
