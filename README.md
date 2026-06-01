@@ -1,251 +1,268 @@
-# 🌌 NovaMind: Hybrid AI & Customer Support Assistant
+# 🌌 NovaMind: Hybrid AI & Customer Support Chatbot
 
 <p align="center">
   <img src="assets/novamind_ai_mode.png" width="49%" alt="NovaMind AI Mode" />
   <img src="assets/novamind_support_mode.png" width="49%" alt="NovaMind Support Mode" />
 </p>
 
-NovaMind is a state-of-the-art, dual-personality AI chatbot system that seamlessly integrates a deterministic, context-aware customer support engine with an open-ended generative AI companion. Built with an agile microservices architecture, NovaMind features a local fine-tuned BERT model, an FSM dialog state machine, SQLite session persistence, secure enterprise API protection, and a premium cosmic glassmorphism interface.
+NovaMind is a dual-mode AI chatbot that combines a **deterministic customer support engine** with an **open-ended generative AI companion**. Transactional queries (order tracking, cancellations, refunds) are handled locally via TF-IDF intent classification and an FSM dialog manager backed by SQLite, while general questions are routed to Groq's Llama API. The frontend is a React SPA with a dark glassmorphism UI.
+
+**Live Demo:** [ai-chatbot-kappa-black-54.vercel.app](https://ai-chatbot-kappa-black-54.vercel.app)
 
 ---
 
-## 🚀 Key Features
-
-### 1. 🧠 Intelligent Hybrid Orchestration & Dual-Mode Personalities
-* **🤖 Support Mode:** Uses a local, fine-tuned **BERT Intent Classifier** (`bert-base-uncased`) with high-confidence routing (`>= 0.65`) integrated with a deterministic **Dialog FSM (Finite State Machine)** for slot-filling (order tracking, refund handling, and cancellations).
-* **⚡ NovaMind AI Mode:** A general-purpose generative AI assistant (similar to Gemini, Claude, Grok, or Perplexity) powered by the **Groq Llama Client** (Llama 3.3 70B & Llama 3.1 8B).
-* **🔮 Strict Context Isolation:** In general AI mode, prior transactional support memory (e.g. order numbers, cancellation details) is dynamically filtered out. The AI companion maintains zero memory of support tasks, eliminating contextual confusion.
-* **🛡️ FSM State-Lock Protection:** Prevents low-confidence intermediate intent classifications or out-of-scope banter from overwriting active slot-filling loops. Users can ask unrelated questions mid-transaction and resume support seamlessly.
-
-### 2. 💾 SQLite Persistent Session Storage
-* Replaced in-memory dictionaries with a robust, local, serverless **SQLite Database** (`history.db`) for tracking user state.
-* Fully structures session metadata and conversation turns in relational tables (`sessions`, `messages`) with cascading foreign key deletions.
-* Automatic JSON serialization handles dynamic slot tracking state within SQLite.
-
-### 3. 🎨 Premium Cosmic Glassmorphism UI
-* **Cosmic Midnight Theme:** An immersive deep space interface built on Vanilla CSS (`#070913`) with frosted-glass containers (`backdrop-filter: blur(20px)`), glowing neon shadows, and sleek modern typography ("Outfit").
-* **Interactive Mode Controller:** A gorgeous segmented toggle in the header allowing users to slide between Support Mode and NovaMind AI Mode, complete with pulsing status indicators and dynamic avatar swaps (`🤖` vs `⚡`).
-* **Tactile Interactions:** Bouncing organic typing indicators, high-intent float-up prompt suggestions cards, collapsible drawer history sidebar storing threads, and custom copyable markdown code containers.
-* **Engine Badges:** Direct visual confirmation under each bot response (`🤖 Database Engine` or `⚡ Generative AI`) showing which processing module answered the query.
-
-### 4. 🔒 Enterprise-Grade Security
-* **Bearer Token Validation:** Prevents unauthorized API consumption in production via a custom `@require_api_token` decorator checking authorization headers.
-* **Configurable CORS Policies:** Enforces strict whitelist domains (`ALLOWED_ORIGINS`) to prevent cross-site request forgery (CSRF) and browser-based exploits.
-* **Local Fallback Bypass:** Secure token checks automatically bypass in local development if no key is configured in the environment, maintaining frictionless setup.
-
----
-
-## 📐 System Architecture
-
-The following diagram illustrates how incoming messages are parsed, validated, and routed dynamically between the local BERT Classifier, the FSM Dialog Manager, and the Groq generative API:
+## How It Works
 
 ```mermaid
 graph TD
     User([User Message]) --> ModeSelect{Selected Mode?}
     
-    ModeSelect -- "⚡ NovaMind AI Mode" --> FilterHistory[Filter History <br/> Keep Generative turns only]
-    FilterHistory --> GroqClient[Groq Llama API Client]
-    GroqClient --> SQLite[(SQLite DB <br/> sessions & messages)]
-    SQLite --> RenderAI[Render with ⚡ Engine Badge]
+    ModeSelect -- "⚡ NovaMind AI Mode" --> FilterHistory[Filter History<br/>Keep only generative turns]
+    FilterHistory --> GroqClient[Groq Llama API]
+    GroqClient --> SQLite[(SQLite DB<br/>sessions · messages · orders)]
+    SQLite --> RenderAI[Response with ⚡ Generative AI badge]
     
-    ModeSelect -- "🤖 Support Mode" --> FSMCheck{Active FSM State <br/> & Has Order ID?}
-    FSMCheck -- Yes (Lock Active) --> FSMDialog[Deterministic FSM Dialog Manager]
-    FSMCheck -- No --> BERT[BERT Intent Classifier]
+    ModeSelect -- "🤖 Support Mode" --> FSMCheck{Active FSM Slot<br/>& Has Order ID?}
+    FSMCheck -- Yes --> FSMDialog[FSM Dialog Manager]
+    FSMCheck -- No --> TFIDF[TF-IDF Intent Classifier]
     
-    BERT --> Confidence{Confidence >= 0.65?}
+    TFIDF --> Confidence{Confidence >= 0.65?}
     Confidence -- Yes --> FSMDialog
-    Confidence -- No --> GroqClient
+    Confidence -- No --> LLMExtract{Pending Slot?}
+    LLMExtract -- Yes --> GroqExtract[Groq Llama<br/>Entity Extraction]
+    GroqExtract --> FSMDialog
+    LLMExtract -- No --> GroqClient
     
     FSMDialog --> SQLite
-    SQLite --> RenderSupport[Render with 🤖 Support Badge]
+    SQLite --> RenderSupport[Response with 🤖 Support Engine badge]
 ```
+
+**Routing logic in plain English:**
+1. If the user is in **NovaMind AI mode**, the message goes straight to Groq Llama. Support history is filtered out so the AI never leaks order numbers or support context into general conversation.
+2. If the user is in **Support mode**, the message hits the TF-IDF classifier first. High-confidence support intents (greeting, goodbye, order tracking, cancellation, refund) are routed to the local FSM dialog manager. Everything else falls back to Groq Llama as a generative conversational assistant.
+3. If the FSM is mid-conversation waiting for an order ID and the regex extractor fails, Groq Llama is used as a fallback entity extractor (JSON mode, temperature 0).
 
 ---
 
-## 📂 Project Directory Structure
+## Tech Stack
 
-```text
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Intent Classification** | Pure-Python TF-IDF + Cosine Similarity | Classifies user intent from ~150 training examples. Zero external ML dependencies. |
+| **Dialog Management** | Custom FSM (Finite State Machine) | Manages multi-turn slot-filling flows for order tracking, cancellations, and refunds. |
+| **Generative AI** | Groq Cloud API (Llama 3.3 70B / Llama 3.1 8B) | Handles general-purpose Q&A, coding, creative writing, and fallback responses. |
+| **Database** | SQLite | Stores sessions, conversation history, and order data. Foreign key cascades enabled. |
+| **Backend API** | Flask + Gunicorn | REST API with bearer token auth, CORS policies, and thread-safe Groq client locking. |
+| **Frontend** | React 18 + Vite | Single-page app with dark glassmorphism UI, collapsible session sidebar, code block rendering. |
+| **Deployment** | Vercel (frontend) + Render (backend) | Free-tier hosting. Backend builds in ~30 seconds with no heavy ML dependencies. |
+
+---
+
+## Features
+
+### Dual-Mode Chat
+- **Support Mode (🤖):** Deterministic responses for order tracking, cancellations, and refunds using SQLite-backed data and FSM state management.
+- **NovaMind AI Mode (⚡):** General-purpose AI companion powered by Groq Llama. Coding help, creative writing, analysis, open-ended conversation.
+- **Context isolation:** The two modes maintain separate conversation contexts. Switching to AI mode won't bleed support details into general conversation.
+
+### Intent Classification (TF-IDF)
+- Pure-Python implementation — no PyTorch, no Transformers, no GPU required.
+- Indexes ~150 training examples on startup using TF-IDF vectorization.
+- Matches user input via cosine similarity. Low-confidence matches (< 0.25) get confidence zeroed out to trigger LLM fallback.
+- Supports 5 intents: `greeting`, `goodbye`, `check_order_status`, `cancel_order`, `request_refund`.
+
+### FSM Dialog Manager
+- Multi-turn slot-filling: if a user says "Where is my order?" without providing an ID, the FSM asks for it and waits.
+- **State-lock protection:** If a user asks an unrelated question mid-flow (e.g. "tell me a joke"), the pending FSM state is preserved. They can resume the support flow on the next turn.
+- Order entity extraction uses a multi-pattern regex (`#12345`, `order 12345`, `ORD-12345`, standalone 4-6 digit numbers). If regex fails, Groq Llama extracts the entity via JSON mode as a fallback.
+
+### SQLite Data Layer
+- Three tables: `sessions`, `messages`, `orders`.
+- `PRAGMA foreign_keys = ON` enforced on every connection — deleting a session automatically cascades to its messages.
+- **Dynamic order fallback:** If a queried order ID doesn't exist in the database, a plausible order with randomized status and ETA is generated and persisted. This means any arbitrary order number returns a realistic response.
+- Seeded with 3 initial orders: `#12345` (Shipped), `#67890` (Processing), `#11111` (Delivered).
+
+### Security
+- Bearer token authentication via `@require_api_token` decorator (configurable via `API_AUTH_TOKEN` env var).
+- CORS whitelist via `ALLOWED_ORIGINS` env var.
+- Thread-safe Groq client initialization with double-checked locking for multi-worker deployments (Gunicorn).
+
+### UI
+- Dark cosmic theme (`#070913`) with frosted-glass containers and glowing borders.
+- Segmented mode toggle, model selector dropdown (Llama 3.3 70B / 3.1 8B).
+- Collapsible session history sidebar synced with the backend SQLite database.
+- Typing indicator animation, quick-action pills, suggestion cards.
+- Code block renderer with copy-to-clipboard button.
+- Engine badges under each bot message showing which processor handled the query.
+
+---
+
+## Project Structure
+
+```
 NovaMind/
-├── backend/                       # Flask API & NLP Core
+├── backend/
 │   ├── api/
-│   │   └── app.py                 # Main Flask REST API & Gateway
+│   │   └── app.py                 # Flask REST API, hybrid router, Groq client
 │   ├── dialog_service/
-│   │   ├── dialog_manager.py      # Transactional support FSM
-│   │   ├── state_manager.py       # SQLite connection & session logic
-│   │   └── history.db             # Local SQLite database file (git-ignored)
+│   │   ├── dialog_manager.py      # FSM slot-filling logic for support intents
+│   │   ├── state_manager.py       # SQLite schema, CRUD, session/order management
+│   │   └── history.db             # SQLite database (auto-created, git-ignored)
 │   ├── nlp_service/
-│   │   ├── intent_classifier.py   # BERT model definition & training pipeline
-│   │   ├── predictor.py           # NLP inference loader
-│   │   └── training_data.py       # Fine-tuning domain dataset
+│   │   ├── predictor.py           # TF-IDF vectorizer + cosine similarity classifier
+│   │   └── training_data.py       # ~150 labeled training examples across 5 intents
 │   ├── tests/
-│   │   └── test_api.py            # Automated Pytest suite
-│   └── requirements.txt           # Python backend dependencies
-├── frontend/                      # React.js SPA (Vite Client)
+│   │   ├── test_api.py            # 10 pytest cases (routes, FSM, slot-filling)
+│   │   └── test_performance.py    # Benchmark script (response time + accuracy)
+│   ├── requirements.txt           # Python deps (flask, groq, gunicorn — no ML libs)
+│   └── Dockerfile                 # Container build config
+├── frontend/
 │   ├── src/
-│   │   ├── App.jsx                # Layout, history, chat component
-│   │   ├── App.css                # Cosmic Glassmorphism styling rules
-│   │   └── main.jsx               # React DOM Entrypoint
-│   ├── package.json               # Node packages and dev scripts
-│   └── index.html                 # DOM root container
-├── start.py                       # Unified process orchestrator script
-├── .env.example                   # Environment configuration template
-└── README.md                      # Project documentation (this file)
+│   │   ├── App.jsx                # Main React component (chat, sessions, routing)
+│   │   ├── App.css                # Glassmorphism dark theme styles
+│   │   ├── index.css              # Base CSS reset
+│   │   └── main.jsx               # React DOM entrypoint
+│   ├── vite.config.js             # Vite dev server + API proxy config
+│   ├── package.json               # Node dependencies
+│   └── Dockerfile                 # Container build config
+├── start.py                       # Unified dev server orchestrator (boots both servers)
+├── docker-compose.yml             # Multi-container Docker setup
+├── .env.example                   # Environment variable template
+└── README.md
 ```
 
 ---
 
-## 🛠️ Installation & Setup
+## Setup
 
-### 1. Prerequisite Checklist
-* **Python 3.11+** installed
-* **Node.js 18+** & **npm** installed
-* **Groq Cloud API Key** (Get yours at [console.groq.com](https://console.groq.com/))
+### Prerequisites
+- Python 3.11+
+- Node.js 18+ & npm
+- Groq API key ([console.groq.com](https://console.groq.com/))
 
-### 2. Environment Variables Configuration
-Copy the environment template from the project root and fill in your actual credentials:
+### 1. Configure Environment
 ```bash
 cp .env.example .env
 ```
-Open your newly created `.env` file and configure the values:
+Edit `.env`:
 ```ini
-# Groq API Key for Generative Fallbacks
-GROQ_API_KEY="gsk_your_actual_groq_api_key"
+GROQ_API_KEY="gsk_your_groq_api_key_here"
 
-# Security Token (For production deployment - optional in development)
-API_AUTH_TOKEN="your_secure_pre_shared_bearer_token"
-VITE_API_AUTH_TOKEN="your_secure_pre_shared_bearer_token"
+# Optional — only needed for production token auth
+API_AUTH_TOKEN="your_bearer_token"
+VITE_API_AUTH_TOKEN="your_bearer_token"
 
-# Allow CORS for local dev server
+# CORS whitelist (comma-separated)
 ALLOWED_ORIGINS="http://localhost:5000"
 ```
 
-### 3. Quickstart (Unified Orchestrator)
-Boot both the React Vite development client and Flask REST backend concurrently with a single command from the project root:
+### 2. Quick Start (Both Servers)
 ```bash
 python start.py
 ```
-* **Vite Web Client:** Runs on [http://localhost:5000](http://localhost:5000)
-* **Flask REST API:** Runs on [http://localhost:8000](http://localhost:8000)
-* *Press `Ctrl+C` in the terminal to clean up and terminate both servers gracefully.*
+- Frontend: [http://localhost:5000](http://localhost:5000)
+- Backend API: [http://localhost:8000](http://localhost:8000)
+- Press `Ctrl+C` to stop both.
 
----
+### 3. Manual Setup
 
-## 🔧 Manual Setup & NLP Training
-
-If you prefer to run or build components individually:
-
-### Step 1: Backend Setup
-1. Navigate to the backend folder:
-   ```bash
-   cd backend
-   ```
-2. Create and activate a Python virtual environment:
-   ```bash
-   python -m venv venv
-   # On Windows:
-   venv\Scripts\activate
-   # On macOS/Linux:
-   source venv/bin/activate
-   ```
-3. Install backend dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. **Train the local BERT Model:** Fine-tune `bert-base-uncased` on customer support intents:
-   ```bash
-   python nlp_service/intent_classifier.py
-   ```
-   *Model weights will save to the `backend/nlp_service/model/` directory.*
-5. Start the Flask server individually:
-   ```bash
-   python api/app.py
-   ```
-
-### Step 2: Frontend Setup
-1. Navigate to the frontend folder:
-   ```bash
-   cd frontend
-   ```
-2. Install node packages:
-   ```bash
-   npm install
-   ```
-3. Start the Vite hot-reloading development server:
-   ```bash
-   npm run dev
-   ```
-
----
-
-## 📡 REST API Specifications
-
-All conversational and history endpoints are located under the Flask server. In production, requests require the `Authorization: Bearer <API_AUTH_TOKEN>` header.
-
-### 1. `GET /health` or `GET /`
-Returns backend health status, database connectivity, and loaded model configuration.
-* **Response (200 OK):**
-  ```json
-  {
-    "status": "healthy",
-    "database": "connected",
-    "bert_model": "loaded"
-  }
-  ```
-
-### 2. `POST /session/new`
-Generates a new UUID-based conversation session inside the SQLite memory layer.
-* **Response (200 OK):**
-  ```json
-  {
-    "session_id": "8a83d3e2-8954-4c4f-8cf8-3f81e3a936a7",
-    "message": "Session initialized"
-  }
-  ```
-
-### 3. `POST /chat`
-Submits user input and processes it through the hybrid router.
-* **Payload:**
-  ```json
-  {
-    "session_id": "8a83d3e2-8954-4c4f-8cf8-3f81e3a936a7",
-    "message": "Can you track order #45678?",
-    "mode": "support_engine"  // support_engine or novamind_ai
-  }
-  ```
-* **Response (200 OK):**
-  ```json
-  {
-    "bot_response": "Your order #45678 is currently: Shipped. Expected delivery: 2 days.",
-    "engine": "support_engine",
-    "intent": "order_tracking",
-    "entities": {
-      "order_id": "45678"
-    }
-  }
-  ```
-
-### 4. `GET /history/<session_id>`
-Retrieves chronological message logs for the active session, querying SQLite.
-* **Response (200 OK):**
-  ```json
-  {
-    "session_id": "8a83d3e2-8954-4c4f-8cf8-3f81e3a936a7",
-    "history": [
-      { "role": "user", "content": "hello", "intent": "greeting" },
-      { "role": "assistant", "content": "Hello! I am NovaMind. How can I assist you?", "engine": "support_engine" }
-    ]
-  }
-  ```
-
----
-
-## 🧪 Verification & Testing
-
-NovaMind includes a comprehensive unit testing suite using `pytest` to verify the FSM transitions, intent classifier prediction limits, hybrid router overrides, and session database isolation rules.
-
-### Running Pytests
-From the `backend` directory, run:
+**Backend:**
 ```bash
-pytest tests/
+cd backend
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # macOS/Linux
+pip install -r requirements.txt
+python api/app.py
 ```
-*Verification targets verify 10/10 passing assertions covering database state locking, bearer token authentications, and conversation isolation tests.*
+No separate training step required — the TF-IDF classifier indexes training data on startup.
+
+**Frontend:**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+---
+
+## API Endpoints
+
+All endpoints (except `/health` and `/`) require `Authorization: Bearer <token>` in production.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/` | Status check. Returns `{"status": "ok"}` |
+| `GET` | `/health` | Health check. Returns Groq availability status. |
+| `POST` | `/session/new` | Creates a new session. Returns `{"session_id": "uuid"}` |
+| `GET` | `/sessions` | Lists all sessions with titles and timestamps from SQLite. |
+| `POST` | `/chat` | Main chat endpoint. Accepts `message`, `session_id`, `mode`, `model`. |
+| `GET` | `/history/<session_id>` | Returns conversation history for a session. |
+| `POST` | `/chat/groq` | Direct Groq Llama chat (bypasses intent classification). |
+| `GET` | `/groq/models` | Lists available Groq model keys. |
+
+### Chat Request Example
+```json
+{
+  "message": "Where is my order #12345?",
+  "session_id": "8a83d3e2-...",
+  "mode": "support_engine",
+  "model": "llama3-70b"
+}
+```
+
+### Chat Response Example
+```json
+{
+  "bot_response": "Your order #12345 is currently: Shipped. Estimated delivery: Tomorrow by 8 PM.",
+  "engine": "support_engine",
+  "intent": "check_order_status",
+  "confidence": 0.8721,
+  "entities": { "order_id": "12345" },
+  "session_id": "8a83d3e2-...",
+  "model": null
+}
+```
+
+---
+
+## Testing
+
+From the project root:
+```bash
+pytest backend/tests/
+```
+Runs 10 test cases covering:
+- Home and health endpoints
+- Session creation
+- Intent classification (greeting, order status, cancellation, refund)
+- Error handling (missing message payload)
+- Multi-turn conversation history persistence
+- FSM slot-filling flow (ask for order → supply order ID → verify database response)
+
+---
+
+## Deployment
+
+| Component | Platform | Config |
+|-----------|----------|--------|
+| **Frontend** | Vercel | Auto-deploys from `main` branch. Set `VITE_API_BASE_URL` env var to your Render backend URL. |
+| **Backend** | Render (Free Tier) | Root directory: `backend/`. Build command: `pip install -r requirements.txt`. Start command: `gunicorn api.app:app --bind 0.0.0.0:$PORT`. Set `GROQ_API_KEY` and `ALLOWED_ORIGINS` env vars. |
+
+> **Note:** The free Render tier spins down after 15 minutes of inactivity. The first request after idle takes ~10 seconds to cold-start. The backend builds in under 30 seconds since there are no heavy ML dependencies.
+
+---
+
+## Limitations (Honest Assessment)
+
+- **Intent classifier is not a neural model.** It's TF-IDF + cosine similarity over ~150 examples. It works well for the 5 supported intents but won't generalize to unseen intent categories without adding training data.
+- **No real e-commerce backend.** The order database is SQLite with 3 seeded entries and a dynamic faker for unknown IDs. There is no inventory, payment, or shipping integration.
+- **SQLite is single-file, not production-scale.** Works fine for demos and single-server deployments. For multi-instance production, you'd migrate to PostgreSQL.
+- **Free-tier cold starts.** Render's free tier sleeps after inactivity. First request can take 10-50 seconds to wake up.
+- **No authentication UI.** Bearer tokens are configured via environment variables. There is no login page or user account system.
+
+---
+
+## License
+
+This project is open-source for educational and portfolio purposes.
