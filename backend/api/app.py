@@ -90,6 +90,72 @@ def list_sessions():
     sessions = dialog.state.list_sessions()
     return jsonify({"sessions": sessions})
 
+@app.route('/auth/register', methods=['POST'])
+@require_api_token
+def register_user():
+    data = request.get_json()
+    if not data or 'email' not in data or 'password' not in data:
+        return jsonify({"error": "Missing email or password"}), 400
+        
+    email = data['email']
+    password = data['password']
+    first_name = data.get('first_name', '')
+    last_name = data.get('last_name', '')
+    
+    success = dialog.state.create_user(email, password, first_name, last_name)
+    if success:
+        return jsonify({"success": True, "message": "User created"})
+    else:
+        return jsonify({"success": False, "error": "Email already exists"}), 409
+
+@app.route('/auth/login', methods=['POST'])
+@require_api_token
+def login_user():
+    data = request.get_json()
+    if not data or 'email' not in data or 'password' not in data:
+        return jsonify({"error": "Missing email or password"}), 400
+        
+    user = dialog.state.verify_user(data['email'], data['password'])
+    if user:
+        import base64
+        token = base64.b64encode(user['email'].encode()).decode()
+        return jsonify({
+            "success": True,
+            "token": token,
+            "user": {
+                "email": user["email"],
+                "first_name": user["first_name"],
+                "last_name": user["last_name"]
+            }
+        })
+    else:
+        return jsonify({"success": False, "error": "Invalid credentials"}), 401
+
+@app.route('/auth/orders', methods=['GET'])
+@require_api_token
+def user_orders():
+    email = request.args.get("email")
+    if not email:
+        return jsonify({"error": "Missing email parameter"}), 400
+    orders = dialog.state.get_user_orders(email)
+    return jsonify({"success": True, "orders": orders})
+
+@app.route('/orders/new', methods=['POST'])
+@require_api_token
+def new_order():
+    data = request.get_json()
+    if not data or 'order_id' not in data:
+        return jsonify({"error": "Missing order_id"}), 400
+    
+    order_id = data.get('order_id')
+    status = data.get('status', 'Processing')
+    eta = data.get('eta', '3-5 business days')
+    details = data.get('details', {})
+    user_email = data.get('user_email', None)
+    
+    order = dialog.state.create_order(order_id, status, eta, details, user_email)
+    return jsonify({"success": True, "order": order})
+
 @app.route('/chat', methods=['POST'])
 @require_api_token
 def chat():
@@ -184,7 +250,7 @@ def chat():
 
     # LLM-Assisted Fallback Extraction:
     # If the database is waiting for "order_id" but our advanced regex failed to extract it,
-    # we ask Groq Llama to extract any 4-6 digit order number from the user's text!
+    # we ask Groq Llama to extract any 4-6 digit order number or LUXE- format from the user's text!
     if pending_slot == "order_id" and "order_id" not in entities:
         client = get_groq_client()
         if client:
@@ -192,9 +258,10 @@ def chat():
                 extraction_prompt = [
                     {
                         "role": "system",
-                        "content": "You are a precise JSON extractor. Your only task is to extract a 4-to-6 digit order ID number from the user text. "
-                                   "If you find an order ID number, return it in this exact JSON format: {\"order_id\": \"number\"}. "
-                                   "If no order number is present in the text, return exactly: {}"
+                        "content": "You are a precise JSON extractor. Your only task is to extract an order ID number from the user text. "
+                                   "Order IDs can be 4-to-6 digits (e.g. 12345) OR start with LUXE- followed by 8 alphanumeric characters (e.g. LUXE-A1B2C3D4). "
+                                   "If you find an order ID number, return it in this exact JSON format: {\"order_id\": \"id_string\"}. "
+                                   "If no order ID is present in the text, return exactly: {}"
                     },
                     {
                         "role": "user",

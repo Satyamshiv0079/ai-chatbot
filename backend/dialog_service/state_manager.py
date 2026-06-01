@@ -3,6 +3,7 @@ import json
 import os
 import uuid
 from datetime import datetime
+import hashlib
 
 DB_PATH = os.path.join(os.path.dirname(__file__), 'history.db')
 
@@ -45,7 +46,18 @@ class ConversationState:
                 CREATE TABLE IF NOT EXISTS orders (
                     order_id TEXT PRIMARY KEY,
                     status TEXT,
-                    eta TEXT
+                    eta TEXT,
+                    details TEXT,
+                    user_email TEXT DEFAULT NULL
+                )
+            ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT UNIQUE,
+                    password_hash TEXT,
+                    first_name TEXT,
+                    last_name TEXT
                 )
             ''')
             
@@ -57,6 +69,13 @@ class ConversationState:
                 conn.execute("ALTER TABLE sessions ADD COLUMN pending_slot TEXT DEFAULT NULL")
             if 'pending_intent' not in columns:
                 conn.execute("ALTER TABLE sessions ADD COLUMN pending_intent TEXT DEFAULT NULL")
+
+            cursor.execute("PRAGMA table_info(orders)")
+            order_columns = [row[1] for row in cursor.fetchall()]
+            if 'details' not in order_columns:
+                conn.execute("ALTER TABLE orders ADD COLUMN details TEXT DEFAULT '{}'")
+            if 'user_email' not in order_columns:
+                conn.execute("ALTER TABLE orders ADD COLUMN user_email TEXT DEFAULT NULL")
                 
             conn.commit()
             
@@ -65,15 +84,15 @@ class ConversationState:
     def _seed_orders(self):
         """Seeds initial mock order database if empty."""
         initial_orders = [
-            ("12345", "Shipped", "Tomorrow by 8 PM"),
-            ("67890", "Processing", "3-5 business days"),
-            ("11111", "Delivered", "Already delivered")
+            ("12345", "Shipped", "Tomorrow by 8 PM", "{}"),
+            ("67890", "Processing", "3-5 business days", "{}"),
+            ("11111", "Delivered", "Already delivered", "{}")
         ]
         with self._get_conn() as conn:
             count = conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
             if count == 0:
                 conn.executemany(
-                    "INSERT INTO orders (order_id, status, eta) VALUES (?, ?, ?)",
+                    "INSERT INTO orders (order_id, status, eta, details) VALUES (?, ?, ?, ?)",
                     initial_orders
                 )
                 conn.commit()
@@ -83,7 +102,13 @@ class ConversationState:
         with self._get_conn() as conn:
             order = conn.execute("SELECT * FROM orders WHERE order_id = ?", (order_id,)).fetchone()
             if order:
-                return dict(order)
+                order_dict = dict(order)
+                if order_dict.get("details"):
+                    try:
+                        order_dict["details"] = json.loads(order_dict["details"])
+                    except:
+                        pass
+                return order_dict
                 
         # Recruiter dynamic fallback: generate on the fly
         import random
@@ -95,12 +120,66 @@ class ConversationState:
         
         with self._get_conn() as conn:
             conn.execute(
-                "INSERT OR IGNORE INTO orders (order_id, status, eta) VALUES (?, ?, ?)",
-                (order_id, status, eta)
+                "INSERT OR IGNORE INTO orders (order_id, status, eta, details, user_email) VALUES (?, ?, ?, ?, NULL)",
+                (order_id, status, eta, "{}")
             )
             conn.commit()
             
+        return {"order_id": order_id, "status": status, "eta": eta, "details": {}}
+
+    def create_order(self, order_id, status, eta, details, user_email=None):
+        """Creates a new order from checkout."""
+        details_json = json.dumps(details) if isinstance(details, dict) else details
+        with self._get_conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO orders (order_id, status, eta, details, user_email) VALUES (?, ?, ?, ?, ?)",
+                (order_id, status, eta, details_json, user_email)
+            )
+            conn.commit()
         return {"order_id": order_id, "status": status, "eta": eta}
+
+    def get_user_orders(self, user_email):
+        with self._get_conn() as conn:
+            orders = conn.execute("SELECT * FROM orders WHERE user_email = ? ORDER BY order_id DESC", (user_email,)).fetchall()
+            result = []
+            for order in orders:
+                order_dict = dict(order)
+                if order_dict.get("details"):
+                    try:
+                        order_dict["details"] = json.loads(order_dict["details"])
+                    except:
+                        pass
+                result.append(order_dict)
+            return result
+            
+    def hash_password(self, password):
+        return hashlib.sha256(password.encode()).hexdigest()
+
+    def create_user(self, email, password, first_name, last_name):
+        with self._get_conn() as conn:
+            try:
+                conn.execute(
+                    "INSERT INTO users (email, password_hash, first_name, last_name) VALUES (?, ?, ?, ?)",
+                    (email, self.hash_password(password), first_name, last_name)
+                )
+                conn.commit()
+                return True
+            except sqlite3.IntegrityError:
+                return False
+
+    def verify_user(self, email, password):
+        with self._get_conn() as conn:
+            user = conn.execute("SELECT * FROM users WHERE email = ? AND password_hash = ?", (email, self.hash_password(password))).fetchone()
+            if user:
+                return dict(user)
+            return None
+            
+    def get_user_by_email(self, email):
+        with self._get_conn() as conn:
+            user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+            if user:
+                return dict(user)
+            return None
 
     def list_sessions(self):
         """Lists all session IDs and their creation times from SQLite."""
