@@ -29,7 +29,7 @@ Thumbs.db
 .idea/
 .config/
 
-# BERT Model weights (both root and backend locations)
+# Local NLP Model weights (both root and backend locations)
 model/
 backend/nlp_service/model/
 

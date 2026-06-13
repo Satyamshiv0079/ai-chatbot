@@ -322,3 +322,47 @@ class ConversationState:
         with self._get_conn() as conn:
             conn.execute('DELETE FROM sessions WHERE session_id = ?', (session_id,))
             conn.commit()
+
+    def delete_session(self, session_id):
+        """Alias for clear_session to match naming conventions."""
+        self.clear_session(session_id)
+
+    def clear_all_sessions(self):
+        """Deletes all sessions (and cascade deletes messages)."""
+        with self._get_conn() as conn:
+            conn.execute('DELETE FROM sessions')
+            conn.commit()
+
+    def get_stats(self):
+        """Returns session, message, intent, and order statistics."""
+        with self._get_conn() as conn:
+            total_sessions = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+            total_messages = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+            
+            intent_dist = conn.execute("SELECT intent, COUNT(*) as count FROM messages GROUP BY intent").fetchall()
+            intent_distribution = {row['intent']: row['count'] for row in intent_dist if row['intent']}
+            
+            order_status = conn.execute("SELECT status, COUNT(*) as count FROM orders GROUP BY status").fetchall()
+            order_status_breakdown = {row['status']: row['count'] for row in order_status if row['status']}
+            
+        return {
+            "total_sessions": total_sessions,
+            "total_messages": total_messages,
+            "intent_distribution": intent_distribution,
+            "order_status_breakdown": order_status_breakdown
+        }
+
+    def get_all_orders(self):
+        """Returns all orders in the database."""
+        with self._get_conn() as conn:
+            rows = conn.execute("SELECT * FROM orders ORDER BY order_id DESC").fetchall()
+            result = []
+            for row in rows:
+                order_dict = dict(row)
+                if order_dict.get("details"):
+                    try:
+                        order_dict["details"] = json.loads(order_dict["details"])
+                    except:
+                        pass
+                result.append(order_dict)
+            return result

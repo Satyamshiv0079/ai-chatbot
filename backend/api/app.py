@@ -235,14 +235,18 @@ def chat():
             "model": model_id if engine == "generative_engine" else None
         })
 
-    # 1. Run local BERT Intent Classifier
+    # 1. Run local NLP Intent Classifier
     nlp_result = nlp.process(user_message)
     intent = nlp_result['intent']
     confidence = nlp_result['confidence']
     entities = nlp_result['entities']
 
     # Standard support intents that require deterministic database/logic
-    support_intents = ['check_order_status', 'cancel_order', 'request_refund', 'greeting', 'goodbye']
+    support_intents = [
+        'check_order_status', 'cancel_order', 'request_refund', 'greeting', 'goodbye',
+        'shipping_info', 'return_policy', 'product_inquiry', 'payment_issue', 'account_help',
+        'complaint', 'thank_you', 'faq_general', 'change_order', 'promotion'
+    ]
 
     # Get active session FSM state to check if we are waiting for order_id
     session = dialog.state.get_session(session_id)
@@ -440,6 +444,42 @@ def get_history(session_id):
     if not session:
         return jsonify({"error": "Session not found"}), 404
     return jsonify({"history": session["history"]})
+
+@app.route('/session/<session_id>', methods=['DELETE'])
+@require_api_token
+def delete_session(session_id):
+    dialog.state.delete_session(session_id)
+    return jsonify({"success": True, "message": f"Session {session_id} deleted successfully."})
+
+@app.route('/sessions/all', methods=['DELETE'])
+@require_api_token
+def clear_all_sessions():
+    dialog.state.clear_all_sessions()
+    return jsonify({"success": True, "message": "All sessions deleted successfully."})
+
+@app.route('/admin/stats', methods=['GET'])
+@require_api_token
+def admin_stats():
+    stats = dialog.state.get_stats()
+    return jsonify(stats)
+
+@app.route('/admin/orders', methods=['GET'])
+@require_api_token
+def admin_orders():
+    orders = dialog.state.get_all_orders()
+    return jsonify({"orders": orders})
+
+@app.route('/admin/order/<order_id>/status', methods=['POST'])
+@require_api_token
+def update_order_status(order_id):
+    data = request.get_json()
+    status = data.get('status')
+    if not status:
+        return jsonify({"error": "Missing status"}), 400
+    with dialog.state._get_conn() as conn:
+        conn.execute("UPDATE orders SET status = ? WHERE order_id = ?", (status, order_id))
+        conn.commit()
+    return jsonify({"success": True})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))

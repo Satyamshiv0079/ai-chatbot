@@ -141,6 +141,7 @@ body {
 }
 
 .session-item {
+  position: relative;
   width: 100%;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid transparent;
@@ -803,4 +804,231 @@ body {
   background: rgba(6, 182, 212, 0.15);
   border-color: var(--color-cyan);
   box-shadow: 0 0 15px rgba(6, 182, 212, 0.35);
+}
+
+/* ==========================================
+   Task 3: Markdown Styling for Chat Bubbles
+   ========================================== */
+.bubble h1, .bubble h2, .bubble h3 {
+  margin-top: 8px;
+  margin-bottom: 4px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.bubble h1 { font-size: 1.4rem; }
+.bubble h2 { font-size: 1.2rem; }
+.bubble h3 { font-size: 1.1rem; }
+
+.bubble p {
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+.bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.bubble ul, .bubble ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.bubble li {
+  margin-bottom: 4px;
+}
+
+.bubble blockquote {
+  border-left: 4px solid var(--color-violet);
+  background: rgba(255, 255, 255, 0.05);
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+}
+
+.bubble hr {
+  border: none;
+  border-top: 1px solid var(--border-neon);
+  margin: 12px 0;
+}
+
+.inline-code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.9em;
+  color: var(--color-cyan);
+}
+
+.bubble a {
+  color: var(--color-cyan);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.bubble a:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+/* Markdown Tables */
+.bubble table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 0.9rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-neon);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.bubble th, .bubble td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-neon);
+}
+
+.bubble th {
+  background: rgba(139, 92, 246, 0.1);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.bubble tr:last-child td {
+  border-bottom: none;
+}
+
+/* ==========================================
+   Task 4: Session List Actions & Export
+   ========================================== */
+.session-item .delete-btn {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 14px;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.session-item:hover .delete-btn {
+  opacity: 1;
+}
+
+.session-item .delete-btn:hover {
+  transform: translateY(-50%) scale(1.2);
+}
+
+.clear-all-btn {
+  width: 100%;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.clear-all-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #ffffff;
+}
+
+/* Task 5: Export Button Styling */
+.export-btn, .theme-toggle-btn {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-neon);
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.export-btn:hover, .theme-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  border-color: var(--color-violet);
+  box-shadow: 0 0 10px var(--color-violet-glow);
+}
+
+/* ==========================================
+   Task 7: Light Theme Variables & Overrides
+   ========================================== */
+[data-theme="light"] {
+  --bg-cosmic: #f0f2f5;
+  --panel-glass: rgba(255, 255, 255, 0.85);
+  --panel-glass-active: rgba(255, 255, 255, 0.95);
+  --border-neon: rgba(0, 0, 0, 0.08);
+  
+  --text-primary: #1a1a2e;
+  --text-secondary: #4a5568;
+  --text-muted: #718096;
+  
+  --shadow-cosmic: 0 4px 20px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.02);
+  --shadow-neon-violet: 0 2px 8px rgba(139, 92, 246, 0.15);
+  --shadow-neon-orange: 0 2px 8px rgba(249, 115, 22, 0.15);
+}
+
+[data-theme="light"] body {
+  background: radial-gradient(circle at 50% 50%, #ffffff 0%, var(--bg-cosmic) 100%);
+}
+
+[data-theme="light"] .bubble.bot {
+  background: rgba(139, 92, 246, 0.06);
+  color: var(--text-primary);
+}
+
+[data-theme="light"] .bubble.user {
+  background: rgba(6, 182, 212, 0.1);
+  color: var(--text-primary);
+}
+
+[data-theme="light"] .suggestion-card {
+  background: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .suggestion-card:hover {
+  background: rgba(139, 92, 246, 0.05);
+  border-color: var(--color-violet);
+}
+
+[data-theme="light"] .input-panel input {
+  background: rgba(0, 0, 0, 0.03);
+  color: var(--text-primary);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .inline-code {
+  background: rgba(0, 0, 0, 0.05);
+  color: #0d9488;
+}
+
+[data-theme="light"] .code-container {
+  background: #1e1e24;
+}
+
+[data-theme="light"] .session-item.active {
+  background: rgba(139, 92, 246, 0.08);
+}
+
+[data-theme="light"] .new-chat-btn {
+  background: var(--color-violet);
+  color: white;
 }

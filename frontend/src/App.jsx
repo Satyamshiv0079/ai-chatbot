@@ -1,5 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import './App.css'
+import AdminDashboard from './AdminDashboard'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 const API_TOKEN = import.meta.env.VITE_API_AUTH_TOKEN || ''
@@ -37,7 +42,18 @@ export default function App() {
   const [sessionsList, setSessionsList] = useState([])
   const [chatMode, setChatMode] = useState('support_engine')
   
+  // Task 6: Streaming animation states
+  const [streamingText, setStreamingText] = useState('')
+  const [isStreaming, setIsStreaming] = useState(false)
+
+  // Task 7: Theme toggle state
+  const [theme, setTheme] = useState(() => localStorage.getItem('novamind_theme') || 'dark')
+  
+  // Admin dashboard state
+  const [adminOpen, setAdminOpen] = useState(false)
+  
   const messagesEndRef = useRef(null)
+  const streamIntervalRef = useRef(null)
 
   // Initialize and check status
   useEffect(() => {
@@ -45,10 +61,16 @@ export default function App() {
     loadLocalSessions()
   }, [])
 
-  // Auto-scroll on new messages
+  // Task 7: Apply theme to document
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('novamind_theme', theme)
+  }, [theme])
+
+  // Auto-scroll on new messages and during streaming
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading])
+  }, [messages, loading, streamingText])
 
   const checkBackend = async () => {
     try {
@@ -167,9 +189,73 @@ export default function App() {
     resumeSession(id)
   }
 
+  // Task 4: Delete a single session
+  const deleteSession = async (id, e) => {
+    e.stopPropagation()
+    try {
+      await fetch(`${API_BASE}/session/${id}`, { method: 'DELETE', headers: getHeaders() })
+      const updatedSessions = await loadLocalSessions()
+      if (id === sessionId) {
+        startNewSession()
+      }
+    } catch (err) {
+      console.error('Delete session error:', err)
+    }
+  }
+
+  // Task 4: Clear all sessions
+  const clearAllSessions = async () => {
+    if (!window.confirm('Are you sure you want to delete ALL chat sessions? This cannot be undone.')) return
+    try {
+      await fetch(`${API_BASE}/sessions/all`, { method: 'DELETE', headers: getHeaders() })
+      localStorage.removeItem('novamind_sessions')
+      localStorage.removeItem('novamind_active_session')
+      setSessionsList([])
+      startNewSession()
+    } catch (err) {
+      console.error('Clear all sessions error:', err)
+    }
+  }
+
+  // Task 6: Streaming word-by-word animation
+  const streamResponse = (fullText, botMsgData) => {
+    const words = fullText.split(/(\s+)/)
+    let currentIndex = 0
+    setStreamingText('')
+    setIsStreaming(true)
+
+    // Add placeholder message
+    setMessages(prev => [...prev, { ...botMsgData, text: '' }])
+
+    streamIntervalRef.current = setInterval(() => {
+      if (currentIndex < words.length) {
+        currentIndex++
+        const builtText = words.slice(0, currentIndex).join('')
+        setStreamingText(builtText)
+        // Update the last message in-place
+        setMessages(prev => {
+          const updated = [...prev]
+          updated[updated.length - 1] = { ...updated[updated.length - 1], text: builtText }
+          return updated
+        })
+      } else {
+        clearInterval(streamIntervalRef.current)
+        streamIntervalRef.current = null
+        // Ensure final full text is set
+        setMessages(prev => {
+          const updated = [...prev]
+          updated[updated.length - 1] = { ...updated[updated.length - 1], text: fullText }
+          return updated
+        })
+        setStreamingText('')
+        setIsStreaming(false)
+      }
+    }, 30)
+  }
+
   const sendMessage = async (messageText = null) => {
     const text = messageText ? messageText.trim() : input.trim()
-    if (!text || loading) return
+    if (!text || loading || isStreaming) return
 
     const userMsg = { role: 'user', text }
     setMessages(prev => [...prev, userMsg])
@@ -200,17 +286,19 @@ export default function App() {
       if (data.error) {
         setMessages(prev => [...prev, { role: 'bot', text: `Error: ${data.error}`, engine: 'fallback_engine' }])
       } else {
-        setMessages(prev => [...prev, {
+        const botMsgData = {
           role: 'bot', 
-          text: data.bot_response,
           intent: data.intent !== 'generative_qa' ? data.intent : null, 
           confidence: data.confidence,
           engine: data.engine,
           model: data.model
-        }])
-        
-        // Sync sessions with backend to fetch correct database-backed titles and timestamps
+        }
+        // Start streaming animation instead of instant display
+        setLoading(false)
+        streamResponse(data.bot_response, botMsgData)
+        // Sync sessions with backend
         await loadLocalSessions()
+        return // skip the finally setLoading since we already set it
       }
     } catch (e) {
       setMessages(prev => [...prev, { role: 'bot', text: 'Could not connect to the gateway. Please retry.', engine: 'fallback_engine' }])
@@ -232,38 +320,63 @@ export default function App() {
     alert('Code copied to clipboard! ✓')
   }
 
-  // Custom regex markdown/code blocks parser
+  // Task 2: ReactMarkdown-based renderer
   const renderMessageText = (text) => {
     if (!text) return ''
-    const parts = text.split(/(```[\s\S]*?```)/g)
+    return (
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          code({node, inline, className, children, ...props}) {
+            const match = /language-(\w+)/.exec(className || '')
+            return !inline && match ? (
+              <div className="code-container">
+                <div className="code-header">
+                  <span className="code-lang">{match[1]}</span>
+                  <button className="copy-btn" onClick={() => copyToClipboard(String(children))}>📋 Copy</button>
+                </div>
+                <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
+                  {String(children).replace(/\n$/, '')}
+                </SyntaxHighlighter>
+              </div>
+            ) : (
+              <code className="inline-code" {...props}>{children}</code>
+            )
+          },
+          a({href, children}) {
+            return <a href={href} target="_blank" rel="noopener noreferrer">{children} ↗</a>
+          }
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    )
+  }
+
+  // Task 5: Export chat transcript
+  const exportChat = () => {
+    const date = new Date()
+    const header = `NovaMind Chat Export - ${date.toLocaleString()}\n---\n\n`
+    const body = messages.map(msg => {
+      const label = msg.role === 'user' ? '[User]' : '[NovaMind]'
+      return `${label}: ${msg.text}`
+    }).join('\n\n')
     
-    return parts.map((part, index) => {
-      if (part.startsWith('```')) {
-        const match = part.match(/```(\w*)\n([\s\S]*?)```/)
-        const lang = match ? match[1] : 'code'
-        const code = match ? match[2] : part.slice(3, -3)
-        
-        return (
-          <div className="code-container" key={index}>
-            <div className="code-header">
-              <span className="code-lang">{lang}</span>
-              <button className="copy-btn" onClick={() => copyToClipboard(code)}>
-                📋 Copy
-              </button>
-            </div>
-            <pre className="code-pre"><code>{code}</code></pre>
-          </div>
-        )
-      }
-      
-      const boldParts = part.split(/(\*\*.*?\*\*)/g)
-      return boldParts.map((subPart, subIndex) => {
-        if (subPart.startsWith('**') && subPart.endsWith('**')) {
-          return <strong key={subIndex}>{subPart.slice(2, -2)}</strong>
-        }
-        return subPart
-      })
-    })
+    const content = header + body
+    const blob = new Blob([content], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `NovaMind_Chat_${Date.now()}.txt`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  // Task 7: Toggle theme
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark')
   }
 
   // Interactive Grid Suggestions
@@ -306,9 +419,25 @@ export default function App() {
                 <span>ID: {s.id.substring(0, 8)}...</span>
                 <span>{s.timestamp}</span>
               </div>
+              {/* Task 4: Delete button on each session */}
+              <button 
+                className="delete-btn" 
+                onClick={(e) => deleteSession(s.id, e)}
+                title="Delete session"
+              >
+                🗑️
+              </button>
             </button>
           ))}
         </div>
+        {/* Task 4: Clear All button */}
+        {sessionsList.length > 0 && (
+          <div style={{ padding: '10px 15px', borderTop: '1px solid var(--border-neon)' }}>
+            <button className="clear-all-btn" onClick={clearAllSessions}>
+              🗑️ Clear All Sessions
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Chat Interface */}
@@ -336,6 +465,21 @@ export default function App() {
           </div>
 
           <div className="header-right">
+            {/* Task 7: Theme Toggle */}
+            <button className="theme-toggle-btn" onClick={toggleTheme} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+              {theme === 'dark' ? '☀️' : '🌙'}
+            </button>
+
+            {/* Admin Dashboard Trigger */}
+            <button className="theme-toggle-btn" onClick={() => setAdminOpen(true)} title="Open Admin Control Center">
+              🛠️
+            </button>
+
+            {/* Task 5: Export Chat Button */}
+            <button className="export-btn" onClick={exportChat} title="Export chat transcript">
+              📥
+            </button>
+
             {/* Premium Segmented Mode Selector */}
             <div className="mode-segmented-control">
               <button 
@@ -389,8 +533,8 @@ export default function App() {
               <div className="welcome-icon">⚡</div>
               <h2 className="welcome-title">Welcome to NovaMind</h2>
               <p className="welcome-desc">
-                Your high-performance hybrid AI. I parse transactional order flows using local BERT NLP, 
-                and contextually answer general queries using state-of-the-art Llama 3.3.
+                Your high-performance hybrid AI. I handle customer support with intelligent intent classification, 
+                and answer everything else with state-of-the-art Llama 3.3.
               </p>
               <div className="suggestions-grid">
                 {dashboardSuggestions.map((s, idx) => (
@@ -479,12 +623,12 @@ export default function App() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask me anything..."
-              disabled={loading || backendStatus === 'offline'}
+              placeholder={isStreaming ? "NovaMind is responding..." : "Ask me anything..."}
+              disabled={loading || isStreaming || backendStatus === 'offline'}
             />
             <button
               onClick={() => sendMessage()}
-              disabled={!input.trim() || loading || backendStatus === 'offline'}
+              disabled={!input.trim() || loading || isStreaming || backendStatus === 'offline'}
               className="send-btn-glowing"
             >
               ➔
@@ -498,6 +642,10 @@ export default function App() {
           )}
         </div>
       </div>
+      
+      {adminOpen && (
+        <AdminDashboard onClose={() => setAdminOpen(false)} />
+      )}
     </div>
   )
 }

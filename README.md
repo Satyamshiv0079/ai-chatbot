@@ -67,9 +67,9 @@ graph TD
 
 ### Intent Classification (TF-IDF)
 - Pure-Python implementation — no PyTorch, no Transformers, no GPU required.
-- Indexes ~150 training examples on startup using TF-IDF vectorization.
+- Indexes ~470 training examples on startup using TF-IDF vectorization.
 - Matches user input via cosine similarity. Low-confidence matches (< 0.25) get confidence zeroed out to trigger LLM fallback.
-- Supports 5 intents: `greeting`, `goodbye`, `check_order_status`, `cancel_order`, `request_refund`.
+- Supports 15 intents: `greeting`, `goodbye`, `check_order_status`, `cancel_order`, `request_refund`, `shipping_info`, `return_policy`, `product_inquiry`, `payment_issue`, `account_help`, `complaint`, `thank_you`, `faq_general`, `change_order`, `promotion`.
 
 ### FSM Dialog Manager
 - Multi-turn slot-filling: if a user says "Where is my order?" without providing an ID, the FSM asks for it and waits.
@@ -88,12 +88,14 @@ graph TD
 - Thread-safe Groq client initialization with double-checked locking for multi-worker deployments (Gunicorn).
 
 ### UI
-- Dark cosmic theme (`#070913`) with frosted-glass containers and glowing borders.
-- Segmented mode toggle, model selector dropdown (Llama 3.3 70B / 3.1 8B).
-- Collapsible session history sidebar synced with the backend SQLite database.
-- Typing indicator animation, quick-action pills, suggestion cards.
-- Code block renderer with copy-to-clipboard button.
-- Engine badges under each bot message showing which processor handled the query.
+- Premium glassmorphic interface supporting both Dark Cosmic (`#070913`) and clean Light modes.
+- Theme Toggle with `localStorage` state persistence and browser preferences detection.
+- Rich Markdown parser via `ReactMarkdown` rendering headers, links, lists, blockquotes, code syntax highlighting (Prism), and tables.
+- Segmented mode toggle (deterministic Support vs generative NovaMind AI).
+- Collapsible session history sidebar with delete button per-session and a clear all option.
+- Conversation export to downloadable `.txt` transcripts.
+- Word-by-word progressive streaming visual animations.
+- Admin dashboard displaying aggregate charts, intent distribution, session management, and order status updates.
 
 ---
 
@@ -198,8 +200,12 @@ All endpoints (except `/health` and `/`) require `Authorization: Bearer <token>`
 | `GET` | `/sessions` | Lists all sessions with titles and timestamps from SQLite. |
 | `POST` | `/chat` | Main chat endpoint. Accepts `message`, `session_id`, `mode`, `model`. |
 | `GET` | `/history/<session_id>` | Returns conversation history for a session. |
-| `POST` | `/chat/groq` | Direct Groq Llama chat (bypasses intent classification). |
+| `DELETE` | `/session/<session_id>` | Deletes a single session (and cascades to messages). |
+| `DELETE` | `/sessions/all` | Deletes all sessions (and cascades to messages). |
 | `GET` | `/groq/models` | Lists available Groq model keys. |
+| `GET` | `/admin/stats` | Retrieves database metrics and statistics. |
+| `GET` | `/admin/orders` | Retrieves a list of all order objects. |
+| `POST` | `/admin/order/<order_id>/status` | Updates the status of a specific order. |
 
 ### Chat Request Example
 ```json
@@ -228,17 +234,29 @@ All endpoints (except `/health` and `/`) require `Authorization: Bearer <token>`
 
 ## Testing
 
+### Backend tests
 From the project root:
 ```bash
-pytest backend/tests/
+python -m pytest backend/tests/ -v
 ```
-Runs 10 test cases covering:
+Runs 20 test cases covering:
 - Home and health endpoints
-- Session creation
-- Intent classification (greeting, order status, cancellation, refund)
-- Error handling (missing message payload)
-- Multi-turn conversation history persistence
-- FSM slot-filling flow (ask for order → supply order ID → verify database response)
+- Session creation and history retrieval
+- Intent classification for 15 support intents (greeting, goodbye, order status, cancellation, refund, shipping, returns, complaint, thank you, etc.)
+- Session deletion and clearing all history
+- Admin metrics and order retrieval endpoints
+- Multi-turn conversation history persistence and FSM slot-filling flow
+
+### Frontend tests
+From the `frontend` folder:
+```bash
+npx vitest run
+```
+Runs Vitest unit tests verifying:
+- App rendering of the suggestions dashboard and chat container
+- Sidebar sessions list rendering
+- Support vs NovaMind AI mode switcher
+- Dark/Light theme toggle persistence
 
 ---
 
