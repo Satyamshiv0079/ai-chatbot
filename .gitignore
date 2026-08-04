@@ -8,3 +8,18 @@ build/
 .DS_Store
 backend/nlp_service/model/
 *.log
+
+# Database files — never commit these
+*.db
+*.sqlite
+*.sqlite3
+
+# Sensitive backend files
+backend/env.txt
+backend/g4f_output.txt
+backend/test_ddg*.py
+backend/test_g4f.py
+backend/test_chat.py
+
+# Frontend build artifacts
+frontend/chatbot-ui/build/
