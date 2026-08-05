@@ -63,6 +63,26 @@ training_data = [
     {"text": "Thank you for your help", "intent": "goodbye", "entities": {}},
     {"text": "I'm done, thanks", "intent": "goodbye", "entities": {}},
     {"text": "Have a good day", "intent": "goodbye", "entities": {}},
+
+    # Store Hours
+    {"text": "What are your hours?", "intent": "store_hours", "entities": {}},
+    {"text": "When do you open?", "intent": "store_hours", "entities": {}},
+    {"text": "Are you open on weekends?", "intent": "store_hours", "entities": {}},
+    {"text": "What time do you close?", "intent": "store_hours", "entities": {}},
+    {"text": "Store hours", "intent": "store_hours", "entities": {}},
+    {"text": "Opening hours", "intent": "store_hours", "entities": {}},
+    {"text": "Tell me your working hours", "intent": "store_hours", "entities": {}},
+    {"text": "When are you guys open?", "intent": "store_hours", "entities": {}},
+
+    # Speak to Human
+    {"text": "I want to speak to a human", "intent": "speak_to_human", "entities": {}},
+    {"text": "Connect me to an agent", "intent": "speak_to_human", "entities": {}},
+    {"text": "Speak to representative", "intent": "speak_to_human", "entities": {}},
+    {"text": "I need a real person", "intent": "speak_to_human", "entities": {}},
+    {"text": "Customer service", "intent": "speak_to_human", "entities": {}},
+    {"text": "Get me an agent", "intent": "speak_to_human", "entities": {}},
+    {"text": "Talk to a human", "intent": "speak_to_human", "entities": {}},
+    {"text": "Transfer me", "intent": "speak_to_human", "entities": {}},
 ]
 
 # All possible intents
@@ -71,5 +91,7 @@ INTENTS = [
     "cancel_order",
     "request_refund",
     "greeting",
-    "goodbye"
+    "goodbye",
+    "store_hours",
+    "speak_to_human"
 ]

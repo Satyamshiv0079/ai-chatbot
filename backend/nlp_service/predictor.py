@@ -3,7 +3,7 @@ import torch, re, os, sys
 # Fix path so training_data can always be found
 sys.path.insert(0, os.path.dirname(__file__))
 
-from transformers import BertTokenizer, BertForSequenceClassification
+from transformers import AutoTokenizer, BertForSequenceClassification
 from training_data import INTENTS
 
 intent2id = {intent: i for i, intent in enumerate(INTENTS)}
@@ -14,7 +14,7 @@ class NLPPredictor:
         if model_path is None:
             model_path = os.path.join(os.path.dirname(__file__), 'model')
         print("Loading trained BERT model...")
-        self.tokenizer = BertTokenizer.from_pretrained(model_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
         self.model = BertForSequenceClassification.from_pretrained(model_path)
         self.model.eval()
 
