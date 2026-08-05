@@ -8,6 +8,7 @@ import './ChatWindow.css';
 function MessageBubble({ message }) {
   const isBot = message.sender === 'bot';
   const [copied, setCopied] = useState(false);
+  const bubbleRef = useRef(null);
 
   const handleCopy = (text) => {
     navigator.clipboard.writeText(text);
@@ -16,13 +17,11 @@ function MessageBubble({ message }) {
   };
 
   const [displayedText, setDisplayedText] = useState(isBot && message.isNew ? '' : message.text);
-  
+
   useEffect(() => {
     if (!isBot || !message.isNew) return;
-    
     let currentIndex = 0;
-    const speed = 2; // characters per tick
-    
+    const speed = 3;
     const interval = setInterval(() => {
       if (currentIndex <= message.text.length) {
         setDisplayedText(message.text.slice(0, currentIndex));
@@ -32,19 +31,43 @@ function MessageBubble({ message }) {
         clearInterval(interval);
       }
     }, 10);
-    
     return () => clearInterval(interval);
   }, [message.text, isBot, message.isNew]);
 
+  // 3D tilt on mouse move
+  const handleMouseMove = (e) => {
+    const el = bubbleRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const cx = rect.width / 2;
+    const cy = rect.height / 2;
+    const rotateX = ((y - cy) / cy) * -4;
+    const rotateY = ((x - cx) / cx) * 4;
+    el.style.transform = `perspective(800px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateZ(4px)`;
+  };
+
+  const handleMouseLeave = () => {
+    if (bubbleRef.current) {
+      bubbleRef.current.style.transform = 'perspective(800px) rotateX(0deg) rotateY(0deg) translateZ(0px)';
+    }
+  };
+
   return (
-    <div className={`message-wrapper ${isBot ? 'bot-wrapper' : 'user-wrapper'}`}>
+    <div className={`message-wrapper ${isBot ? 'bot-wrapper' : 'user-wrapper'} spatial-entry`}>
       {isBot && (
-        <div className="avatar bot-avatar">
-          <Bot size={20} />
+        <div className="avatar bot-avatar spatial-avatar">
+          <Bot size={18} />
         </div>
       )}
 
-      <div className={`message-bubble ${isBot ? 'bot-bubble' : 'user-bubble'}`}>
+      <div
+        ref={bubbleRef}
+        className={`message-bubble ${isBot ? 'bot-bubble spatial-card' : 'user-bubble spatial-user-card'}`}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+      >
         {isBot ? (
           <div className="markdown-content">
             <ReactMarkdown
@@ -53,14 +76,10 @@ function MessageBubble({ message }) {
                   const match = /language-(\w+)/.exec(className || '');
                   const codeString = String(children).replace(/\n$/, '');
                   return !inline && match ? (
-                    <div className="code-block-container">
+                    <div className="code-block-container spatial-code">
                       <div className="code-block-header">
                         <span className="code-language">{match[1]}</span>
-                        <button 
-                          className="copy-button"
-                          onClick={() => handleCopy(codeString)}
-                          title="Copy Code"
-                        >
+                        <button className="copy-button" onClick={() => handleCopy(codeString)}>
                           {copied ? <Check size={14} /> : <Copy size={14} />}
                           <span>{copied ? 'Copied!' : 'Copy'}</span>
                         </button>
@@ -71,44 +90,32 @@ function MessageBubble({ message }) {
                         style={vscDarkPlus}
                         language={match[1]}
                         PreTag="div"
-                        customStyle={{ margin: 0, borderRadius: '0 0 6px 6px' }}
+                        customStyle={{ margin: 0, borderRadius: '0 0 8px 8px' }}
                       />
                     </div>
                   ) : (
-                    <code {...props} className={className ? className : 'inline-code'}>
-                      {children}
-                    </code>
+                    <code {...props} className={className || 'inline-code'}>{children}</code>
                   );
                 }
               }}
             >
               {displayedText}
             </ReactMarkdown>
-            
+
             <div className="message-actions">
-               <button 
-                  className="icon-action-btn"
-                  onClick={() => handleCopy(message.text)}
-                  title="Copy message"
-                >
-                  {copied ? <Check size={14} /> : <Copy size={14} />}
-                </button>
+              <button className="icon-action-btn" onClick={() => handleCopy(message.text)} title="Copy">
+                {copied ? <Check size={13} /> : <Copy size={13} />}
+              </button>
             </div>
           </div>
         ) : (
           <p className="message-text">{message.text}</p>
         )}
-
-        {isBot && message.intent && (
-          <p className="intent-label">
-            Intent: {message.intent} ({(message.confidence * 100).toFixed(1)}%)
-          </p>
-        )}
       </div>
 
       {!isBot && (
-        <div className="avatar user-avatar">
-          <User size={20} />
+        <div className="avatar user-avatar spatial-avatar">
+          <User size={18} />
         </div>
       )}
     </div>

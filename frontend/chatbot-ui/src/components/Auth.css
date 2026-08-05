@@ -6,31 +6,60 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(-45deg, #0f0c29, #302b63, #24243e, #1a1a2e);
-  background-size: 400% 400%;
-  animation: authBG 12s ease infinite;
+  background: #0d0f1a;
   font-family: 'Inter', sans-serif;
   padding: 20px;
+  position: relative;
+  overflow: hidden;
 }
 
-@keyframes authBG {
-  0%   { background-position: 0% 50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+/* Spatial orbs */
+.auth-container::before,
+.auth-container::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+  animation: authOrb 10s ease-in-out infinite;
+}
+
+.auth-container::before {
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(99,102,241,0.22) 0%, transparent 70%);
+  top: -120px;
+  right: -60px;
+}
+
+.auth-container::after {
+  width: 380px;
+  height: 380px;
+  background: radial-gradient(circle, rgba(168,85,247,0.18) 0%, transparent 70%);
+  bottom: -80px;
+  left: -40px;
+  animation-delay: -5s;
+}
+
+@keyframes authOrb {
+  0%, 100% { transform: translate(0,0) scale(1); }
+  50% { transform: translate(20px, -30px) scale(1.1); }
 }
 
 .auth-card {
   background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 20px;
   padding: 48px 40px;
   width: 100%;
   max-width: 420px;
   text-align: center;
-  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 2px 0 rgba(255,255,255,0.05) inset;
   animation: cardSlideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  z-index: 1;
 }
 
 @keyframes cardSlideUp {
