@@ -40,6 +40,7 @@ class UserSession(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(String, unique=True, nullable=False)
     user_id = Column(String, nullable=False, default="anonymous")
+    title = Column(String(100), nullable=True, default="New Chat")
     status = Column(String, nullable=False, default="Active")
     created_at = Column(DateTime, default=datetime.utcnow)
 

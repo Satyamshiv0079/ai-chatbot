@@ -867,3 +867,182 @@
   .chat-header { padding: 10px 14px; }
   .message-bubble { max-width: 88%; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   History Sidebar Items
+═══════════════════════════════════════════════════════════════════════════ */
+.chat-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 10px;
+  border-radius: 9px;
+  font-size: 13px;
+  cursor: pointer;
+  color: rgba(255,255,255,0.55);
+  transition: all 0.2s;
+  margin-bottom: 2px;
+  gap: 6px;
+}
+
+.chat-history-item:hover  { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.9); }
+.chat-history-item.active { background: rgba(99,102,241,0.18); color: rgba(255,255,255,0.95); }
+
+.history-item-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.history-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.history-meta {
+  font-size: 11px;
+  color: rgba(255,255,255,0.3);
+  margin-top: 1px;
+}
+
+.delete-session-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.2);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.chat-history-item:hover .delete-session-btn { opacity: 1; }
+.delete-session-btn:hover { color: #fca5a5; background: rgba(239,68,68,0.15); }
+
+.empty-history {
+  font-size: 12px;
+  color: rgba(255,255,255,0.2);
+  padding: 8px 4px;
+  text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Model Switcher
+═══════════════════════════════════════════════════════════════════════════ */
+.model-switcher-wrapper { position: relative; }
+
+.model-switcher-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--glass-light);
+  color: var(--text-secondary);
+  backdrop-filter: blur(10px);
+  transition: all 0.2s;
+  box-shadow: var(--depth-1);
+  white-space: nowrap;
+}
+
+.model-switcher-btn:hover {
+  border-color: rgba(99,102,241,0.35);
+  color: var(--accent);
+  background: rgba(99,102,241,0.08);
+  box-shadow: var(--depth-2);
+  transform: translateY(-1px);
+}
+
+.model-switcher-btn .rotated { transform: rotate(180deg); transition: transform 0.2s; }
+
+.model-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 220px;
+  background: var(--glass-light);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  box-shadow: var(--depth-3);
+  overflow: hidden;
+  z-index: 100;
+  animation: menuSlideDown 0.2s cubic-bezier(0.16,1,0.3,1);
+}
+
+@keyframes menuSlideDown {
+  from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.model-menu-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.model-menu-header button {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+.model-menu-header button:hover { color: var(--text-primary); background: rgba(99,102,241,0.1); }
+
+.model-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 11px 14px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+}
+
+.model-menu-item:hover { background: rgba(99,102,241,0.08); }
+
+.model-menu-item.active {
+  background: rgba(99,102,241,0.12);
+  color: var(--accent);
+}
+
+.model-check {
+  font-size: 14px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.footer-disclaimer strong { color: var(--accent); font-weight: 600; }

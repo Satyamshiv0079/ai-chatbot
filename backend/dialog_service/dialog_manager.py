@@ -28,14 +28,14 @@ class DialogManager:
     def start_session(self):
         return self.state.create_session()
 
-    def handle(self, session_id, intent, entities, user_text):
+    def handle(self, session_id, intent, entities, user_text, model="llama-3.3-70b-versatile"):
         session = self.state.get_session(session_id)
         if not session:
             session_id = self.state.create_session()
             session = self.state.get_session(session_id)
 
         if client:
-            response = self._generate_groq_response(session, user_text)
+            response = self._generate_groq_response(session, user_text, model)
         else:
             response = (
                 "I cannot connect to the AI right now. "
@@ -51,7 +51,7 @@ class DialogManager:
             "entities": entities
         }
 
-    def _generate_groq_response(self, session, user_text):
+    def _generate_groq_response(self, session, user_text, model="llama-3.3-70b-versatile"):
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
         # Include last 6 turns for conversation memory
@@ -64,7 +64,7 @@ class DialogManager:
         try:
             chat_completion = client.chat.completions.create(
                 messages=messages,
-                model="llama-3.3-70b-versatile",
+                model=model,
                 temperature=0.7,
                 max_tokens=2048,
             )
