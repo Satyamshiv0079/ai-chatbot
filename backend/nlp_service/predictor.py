@@ -1,60 +1,58 @@
-import torch, re, os, sys
+import re, os, sys
 
 # Fix path so training_data can always be found
 sys.path.insert(0, os.path.dirname(__file__))
-
-from transformers import AutoTokenizer, BertForSequenceClassification
 from training_data import INTENTS
 
-intent2id = {intent: i for i, intent in enumerate(INTENTS)}
 id2intent = {i: intent for i, intent in enumerate(INTENTS)}
 
 class NLPPredictor:
     def __init__(self, model_path=None):
-        if model_path is None:
-            model_path = os.path.join(os.path.dirname(__file__), 'model')
-        
-        # Check if local directory exists and has model files
-        if os.path.isdir(model_path) and os.path.exists(os.path.join(model_path, 'config.json')):
-            target = model_path
-            print(f"Loading local BERT model from {target}...")
-        else:
-            target = "bert-base-uncased"
-            print(f"Local model not found at {model_path}, using default '{target}'...")
+        self.use_torch = False
+        self.tokenizer = None
+        self.model = None
 
+        # Try loading PyTorch/Transformers if installed, otherwise use lightweight fallback
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(target)
-            self.model = BertForSequenceClassification.from_pretrained(target, num_labels=len(INTENTS))
-            self.model.eval()
+            import torch
+            from transformers import AutoTokenizer, BertForSequenceClassification
+            
+            if model_path is None:
+                model_path = os.path.join(os.path.dirname(__file__), 'model')
+            
+            if os.path.isdir(model_path) and os.path.exists(os.path.join(model_path, 'config.json')):
+                print(f"Loading local BERT model from {model_path}...")
+                self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+                self.model = BertForSequenceClassification.from_pretrained(model_path)
+                self.model.eval()
+                self.use_torch = True
         except Exception as e:
-            print(f"Warning: Could not load BERT model ({e}). Using dummy predictor.")
-            self.tokenizer = None
-            self.model = None
+            print(f"Running in lightweight cloud mode (no PyTorch required): {e}")
 
     def predict_intent(self, text):
-        if not self.model or not self.tokenizer:
-            return {"intent": "general_query", "confidence": 0.99}
-
-        inputs = self.tokenizer(
-            text,
-            return_tensors="pt",
-            max_length=64,
-            padding="max_length",
-            truncation=True
-        )
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-
-        probs = torch.softmax(outputs.logits, dim=1)
-        confidence, predicted = torch.max(probs, dim=1)
-
-        pred_id = predicted.item()
-        intent = id2intent.get(pred_id, "general_query")
-
-        return {
-            "intent": intent,
-            "confidence": round(confidence.item(), 4)
-        }
+        if self.use_torch and self.model and self.tokenizer:
+            import torch
+            inputs = self.tokenizer(
+                text, return_tensors="pt", max_length=64, padding="max_length", truncation=True
+            )
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+            probs = torch.softmax(outputs.logits, dim=1)
+            confidence, predicted = torch.max(probs, dim=1)
+            return {
+                "intent": id2intent.get(predicted.item(), "general_query"),
+                "confidence": round(confidence.item(), 4)
+            }
+        
+        # Lightweight fast keyword classifier (uses 0MB extra RAM)
+        text_lower = text.lower()
+        if any(w in text_lower for w in ["hi", "hello", "hey", "greetings"]):
+            return {"intent": "greeting", "confidence": 0.95}
+        elif any(w in text_lower for w in ["bye", "goodbye", "see you"]):
+            return {"intent": "goodbye", "confidence": 0.95}
+        elif any(w in text_lower for w in ["help", "support", "assist"]):
+            return {"intent": "help", "confidence": 0.90}
+        return {"intent": "general_query", "confidence": 0.85}
 
     def extract_entities(self, text):
         entities = {}
