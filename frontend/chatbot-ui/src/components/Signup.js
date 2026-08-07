@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Bot, User, Mail, Lock, AlertCircle, CheckCircle, Loader } from 'lucide-react';
+import { Bot, User, Mail, Lock, AlertCircle, Loader } from 'lucide-react';
 import { registerUser } from '../services/chatService';
 import './Auth.css';
 
