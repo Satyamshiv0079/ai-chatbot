@@ -2,7 +2,7 @@
 
 A full-stack AI chatbot built with Flask, React, and Groq's LLM API. Supports real user authentication, persistent chat history, multiple AI models, and a spatial 3D UI.
 
-> Built by **Satyam** & **Aman** as a learning project.
+> Built by **Satyam** as a learning project.
 
 ---
 
