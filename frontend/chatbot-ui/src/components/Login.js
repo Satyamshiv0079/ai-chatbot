@@ -38,14 +38,13 @@ function Login() {
   return (
     <div className="auth-container">
       <div className="auth-card">
-        <div className="auth-logo">
-          <div className="auth-icon">
+        <div className="auth-header">
+          <div className="auth-logo">
             <Bot size={32} />
           </div>
+          <h2>Welcome back to NovaMind</h2>
+          <p>Sign in to your account to continue</p>
         </div>
-        <h1>Welcome Back</h1>
-        <p>Log in to continue to your AI Assistant</p>
-
         {error && (
           <div className="auth-error">
             <AlertCircle size={16} />

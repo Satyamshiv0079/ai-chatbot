@@ -48,13 +48,13 @@ function Signup() {
   return (
     <div className="auth-container">
       <div className="auth-card">
-        <div className="auth-logo">
-          <div className="auth-icon">
+        <div className="auth-header">
+          <div className="auth-logo">
             <Bot size={32} />
           </div>
-        </div>
-        <h1>Create an Account</h1>
-        <p>Join to experience next-gen AI assistance</p>
+          <h2>Create an Account</h2>
+          <p>Join NovaMind to experience next-gen AI assistance</p>
+        </div> 
 
         {error && (
           <div className="auth-error">

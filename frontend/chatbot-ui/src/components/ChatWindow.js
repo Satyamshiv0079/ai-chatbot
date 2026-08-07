@@ -108,7 +108,7 @@ function ChatWindow() {
       setIsConnected(true);
       setMessages([{
         id: Date.now(), sender: 'bot', isNew: false,
-        text: `Hello, ${getUsername() || 'there'}! 👋 I'm your AI assistant. Ask me anything — coding, science, math, history, creative writing, and more!`,
+        text: `Hello, ${getUsername() || 'there'}! 👋 Welcome to NovaMind. Ask me anything — coding, science, math, history, creative writing, and more!`,
       }]);
       loadSessions();
     } catch {
@@ -214,7 +214,7 @@ function ChatWindow() {
         <div className="sidebar-header">
           <div className="sidebar-logo">
             <Bot size={20} />
-            <span>AI Assistant</span>
+            <span>NovaMind</span>
           </div>
         </div>
 
@@ -276,7 +276,7 @@ function ChatWindow() {
               <Menu size={20} />
             </button>
             <div className="brand-text">
-              <h2>AI Assistant</h2>
+              <h2>NovaMind</h2>
               <p className="status-indicator">
                 <span className={`status-dot ${isConnected ? 'online' : 'offline'}`} />
                 {isConnected ? 'Connected' : 'Connecting…'}
