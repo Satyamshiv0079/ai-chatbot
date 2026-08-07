@@ -4,7 +4,7 @@ A full-stack AI chatbot built with Flask, React, Supabase PostgreSQL, and Groq's
 
 🌐 **Live Demo**: [https://ai-chatbot-6njs1ys87-satyamshiv0079s-projects.vercel.app](https://ai-chatbot-6njs1ys87-satyamshiv0079s-projects.vercel.app)
 
-> Built by **Satyam** & **Aman**.
+> Built by **Satyam**.
 
 ---
 
