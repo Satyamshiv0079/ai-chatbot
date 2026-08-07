@@ -1,1 +1,1 @@
-web: python api/app.py
+web: gunicorn --chdir api app:app --bind 0.0.0.0:$PORT
