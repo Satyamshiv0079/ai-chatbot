@@ -28,12 +28,15 @@ function Signup() {
     setLoading(true);
     try {
       const data = await registerUser(username.trim(), password, email.trim() || undefined);
-      // Store JWT token and username
       localStorage.setItem('authToken', data.access_token);
       localStorage.setItem('chatUsername', data.user.username);
       navigate('/chat');
     } catch (err) {
-      const msg = err?.response?.data?.error || 'Registration failed. Please try again.';
+      // Show the actual error from the backend
+      const msg =
+        err?.response?.data?.error ||
+        err?.message ||
+        'Registration failed. Please try again.';
       setError(msg);
     } finally {
       setLoading(false);

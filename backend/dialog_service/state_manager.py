@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text as sqlalchemy_text
 from sqlalchemy.orm import sessionmaker, scoped_session
 
 # We must import models so Base knows about them
@@ -14,7 +14,22 @@ class ConversationState:
     def __init__(self):
         self.engine = create_engine(DB_URL, echo=False)
         Base.metadata.create_all(self.engine)
+        self._run_migrations()
         self.Session = scoped_session(sessionmaker(bind=self.engine))
+
+    def _run_migrations(self):
+        """Safely add new columns to existing DB without data loss."""
+        with self.engine.connect() as conn:
+            migrations = [
+                "ALTER TABLE user_sessions ADD COLUMN title VARCHAR(100) DEFAULT 'New Chat'",
+                "ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT 1",
+            ]
+            for sql in migrations:
+                try:
+                    conn.execute(sqlalchemy_text(sql))
+                    conn.commit()
+                except Exception:
+                    pass  # Column already exists — safe to ignore
 
     def create_session(self, user_id="anonymous", status="Active"):
         session_id = str(uuid.uuid4())

@@ -10,7 +10,7 @@ class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True, autoincrement=True)
     username = Column(String(80), unique=True, nullable=False)
-    email = Column(String(120), unique=True, nullable=True)
+    email = Column(String(120), nullable=True)  # Not unique — allows multiple users with no email
     password_hash = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
