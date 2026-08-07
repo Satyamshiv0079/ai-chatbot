@@ -200,6 +200,15 @@ function ChatWindow() {
   return (
     <div className={`chat-layout has-sidebar ${darkMode ? 'dark' : ''}`}>
 
+      {/* Backdrop — shown on tablet/mobile when sidebar is open */}
+      {isSidebarOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setIsSidebarOpen(false)}
+          aria-label="Close sidebar"
+        />
+      )}
+
       {/* ── Sidebar ─────────────────────────────────────────────────────── */}
       <aside className={`chat-sidebar ${isSidebarOpen ? 'open' : 'closed'}`}>
         <div className="sidebar-header">
