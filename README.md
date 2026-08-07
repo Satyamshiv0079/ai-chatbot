@@ -1,37 +1,50 @@
 # 🤖 AI Chatbot
 
-A full-stack AI chatbot built with Flask, React, and Groq's LLM API. Supports real user authentication, persistent chat history, multiple AI models, and a spatial 3D UI.
+A full-stack AI chatbot built with Flask, React, Supabase PostgreSQL, and Groq's LLM API. Supports real user authentication, persistent chat history, multiple AI models, and a spatial 3D UI.
 
-> Built by **Satyam** as a learning project.
+🌐 **Live Demo**: [https://ai-chatbot-6njs1ys87-satyamshiv0079s-projects.vercel.app](https://ai-chatbot-6njs1ys87-satyamshiv0079s-projects.vercel.app)
+
+> Built by **Satyam** & **Aman**.
 
 ---
 
-## What It Actually Does
+## 🚀 Live Production Stack
 
-- Chat with a real AI (Llama 3.3 70B via Groq) — not a rule-based bot
-- Create an account, log in, and your chat history is saved
-- Switch between 4 different AI models mid-conversation
-- Dark mode, mobile responsive, spatial glassmorphism UI
-- Voice input (microphone) and optional voice output (text-to-speech)
+| Component | Platform | Tech |
+|---|---|---|
+| **Frontend** | Vercel | React.js, Glassmorphism 3D CSS |
+| **Backend** | Render | Python / Flask, Gunicorn |
+| **Database** | Supabase | PostgreSQL |
+| **AI Model** | Groq API | Llama 3.3 70B, Mixtral 8x7B, Gemma 2 9B |
+
+---
+
+## What It Does
+
+- 💬 **AI Intelligence**: Fast, accurate responses powered by Groq LLMs (`llama-3.3-70b-versatile`, `mixtral-8x7b`, etc.)
+- 🔐 **Real Authentication**: Register, log in, JWT token authorization, bcrypt password hashing
+- 💾 **Persistent Chat History**: Session history stored permanently in cloud PostgreSQL
+- 🎛️ **Model Switcher**: Seamlessly switch between 4 AI models mid-conversation
+- 🎨 **Spatial 3D UI**: Perspective hover tilt, frosted glass cards, dynamic floating orbs, dark mode
+- 📱 **Fully Responsive**: Adaptive sidebar drawer layout for mobile, tablet, and desktop
 
 ---
 
 ## Tech Stack
 
 **Backend**
-- Python / Flask
-- Groq API (LLM inference — `llama-3.3-70b-versatile`, `mixtral-8x7b`, etc.)
-- HuggingFace Transformers + BERT (intent classification)
-- SQLAlchemy + SQLite (database)
-- Flask-JWT-Extended (authentication)
-- bcrypt (password hashing)
+- Python 3.11 / Flask
+- Groq API (LLM inference)
+- SQLAlchemy + PostgreSQL (Supabase) / SQLite (Local)
+- Flask-JWT-Extended (Authentication)
+- bcrypt (Password hashing)
+- Gunicorn (Production WSGI)
 
 **Frontend**
 - React.js
 - Axios (API calls)
-- Lucide React (icons)
-- react-markdown + react-syntax-highlighter (code rendering)
-- CSS — spatial glassmorphism design, no Tailwind
+- Lucide React (Icons)
+- CSS — Spatial glassmorphism design system, dark mode, responsive drawer
 
 ---
 
@@ -41,38 +54,36 @@ A full-stack AI chatbot built with Flask, React, and Groq's LLM API. Supports re
 ai-chatbot/
 ├── backend/
 │   ├── api/
-│   │   └── app.py              # Flask app, all API routes
+│   │   └── app.py              # Flask REST API & routes
 │   ├── auth/
-│   │   └── auth_routes.py      # Register, login, JWT
+│   │   └── auth_routes.py      # Auth logic (Register, Login, JWT)
 │   ├── dialog_service/
-│   │   ├── dialog_manager.py   # Groq LLM calls
-│   │   ├── state_manager.py    # DB session management
+│   │   ├── dialog_manager.py   # Groq LLM integration
+│   │   ├── state_manager.py    # DB session & history management
 │   │   └── models.py           # SQLAlchemy models
-│   ├── nlp_service/
-│   │   └── predictor.py        # BERT intent classifier
-│   ├── .env.example            # Environment variable template
-│   └── requirements.txt
+│   ├── Procfile                # Production startup command for Render
+│   └── requirements.txt        # Production dependencies
 └── frontend/
     └── chatbot-ui/
         └── src/
             ├── components/
-            │   ├── ChatWindow.js   # Main chat UI
-            │   ├── Login.js
-            │   └── Signup.js
+            │   ├── ChatWindow.js   # Main spatial chat interface
+            │   ├── Login.js        # Login page
+            │   └── Signup.js       # Registration page
             └── services/
-                └── chatService.js  # All API calls
+                └── chatService.js  # API service layer
 ```
 
 ---
 
-## Setup
+## Local Setup
 
 ### Prerequisites
 - Python 3.10+
 - Node.js 18+
-- A [Groq API key](https://console.groq.com) (free)
+- A free [Groq API key](https://console.groq.com)
 
-### Backend
+### 1. Backend
 
 ```bash
 cd backend
@@ -85,38 +96,19 @@ venv\Scripts\activate       # Windows
 # Install dependencies
 pip install -r requirements.txt
 
-# Set up environment variables
-cp .env.example .env
-# Edit .env and add your GROQ_API_KEY and JWT_SECRET_KEY
+# Environment configuration
+# Create .env with GROQ_API_KEY and JWT_SECRET_KEY
 
-# Train the BERT intent classifier (one time)
-python nlp_service/intent_classifier.py
-
-# Start the server
+# Run server
 python api/app.py
 ```
 
-Backend runs at `http://localhost:5000`
-
-### Frontend
+### 2. Frontend
 
 ```bash
 cd frontend/chatbot-ui
 npm install
 npm start
-```
-
-Frontend runs at `http://localhost:3000`
-
----
-
-## Environment Variables
-
-Create `backend/.env` (never commit this file):
-
-```env
-GROQ_API_KEY=your_groq_api_key_here
-JWT_SECRET_KEY=any_long_random_string_here
 ```
 
 ---
@@ -135,42 +127,22 @@ JWT_SECRET_KEY=any_long_random_string_here
 | DELETE | `/sessions/<id>` | ✅ | Delete a session |
 | GET | `/models` | ✅ | List available AI models |
 
-✅ = requires `Authorization: Bearer <token>` header
-
 ---
 
-## Available AI Models
+## Roadmap & Features
 
-| Model ID | Name | Best For |
-|----------|------|----------|
-| `llama-3.3-70b-versatile` | Llama 3.3 70B | Best quality (default) |
-| `llama-3.1-8b-instant` | Llama 3.1 8B | Fast responses |
-| `mixtral-8x7b-32768` | Mixtral 8x7B | Long context |
-| `gemma2-9b-it` | Gemma 2 9B | Efficient |
-
----
-
-## Known Limitations
-
-- SQLite database — fine for local dev, not ideal for production scale
-- No message streaming (response appears all at once)
-- BERT intent classifier is trained on a small dataset — accuracy is approximate
-- No file upload / document chat yet
-- JWT tokens don't expire (set `JWT_ACCESS_TOKEN_EXPIRES` for production)
-
----
-
-## What's Not Done Yet
-
-- [ ] Deploy (Vercel + Railway)
-- [ ] PDF / document upload and chat
-- [ ] Rename sessions from the sidebar
-- [ ] Search through chat history
-- [ ] Export conversations
-- [ ] Message streaming
+- [x] JWT Authentication & bcrypt security
+- [x] Spatial 3D UI & glassmorphism design
+- [x] Persistent database session history
+- [x] Multi-model selector (Llama 3.3, Mixtral, Gemma)
+- [x] Responsive overlay drawer for mobile & tablet
+- [x] Free Cloud Deployment (Vercel + Render + Supabase)
+- [ ] PDF / Document upload and chat
+- [ ] Voice input & hands-free speech output
+- [ ] Export conversations (PDF/Text)
 
 ---
 
 ## License
 
-MIT — do whatever you want with it.
+MIT — feel free to use and modify!
