@@ -5,8 +5,8 @@ python-dotenv==1.2.2
 SQLAlchemy==2.0.41
 psycopg2-binary==2.9.10
 groq==0.28.0
-torch==2.1.0
-transformers==4.40.0
-numpy==1.26.4
+torch
+transformers
+numpy
 bcrypt==4.3.0
 gunicorn==22.0.0
