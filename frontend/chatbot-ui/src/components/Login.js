@@ -28,8 +28,12 @@ function Login() {
       localStorage.setItem('chatUsername', data.user.username);
       navigate('/chat');
     } catch (err) {
-      const msg = err?.response?.data?.error || 'Login failed. Please try again.';
-      setError(msg);
+      if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')) {
+        setError('Server cold start: Render free tier takes ~30s to wake up. Please click Sign In once more!');
+      } else {
+        const msg = err?.response?.data?.error || 'Login failed. Please try again.';
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }

@@ -32,12 +32,15 @@ function Signup() {
       localStorage.setItem('chatUsername', data.user.username);
       navigate('/chat');
     } catch (err) {
-      // Show the actual error from the backend
-      const msg =
-        err?.response?.data?.error ||
-        err?.message ||
-        'Registration failed. Please try again.';
-      setError(msg);
+      if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')) {
+        setError('Server cold start: Render free tier takes ~30s to wake up. Please click Create Account once more!');
+      } else {
+        const msg =
+          err?.response?.data?.error ||
+          err?.message ||
+          'Registration failed. Please try again.';
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }

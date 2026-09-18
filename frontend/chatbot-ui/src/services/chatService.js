@@ -20,13 +20,13 @@ const authHeaders = () => ({
 });
 
 // ── Auth API ──────────────────────────────────────────────────────────────────
-export const registerUser = async (username, password) => {
-  const res = await axios.post(`${API_URL}/auth/register`, { username, password });
+export const registerUser = async (username, password, email) => {
+  const res = await axios.post(`${API_URL}/auth/register`, { username, password, email }, { timeout: 15000 });
   return res.data;
 };
 
 export const loginUser = async (username, password) => {
-  const res = await axios.post(`${API_URL}/auth/login`, { username, password });
+  const res = await axios.post(`${API_URL}/auth/login`, { username, password }, { timeout: 15000 });
   return res.data;
 };
 
