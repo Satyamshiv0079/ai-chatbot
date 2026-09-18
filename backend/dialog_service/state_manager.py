@@ -8,7 +8,12 @@ from sqlalchemy.orm import sessionmaker, scoped_session
 from models import Base, UserSession, ConversationHistory, ChatbotResponse, SentimentInfo
 
 # Configurable database URL (default to sqlite for local dev if Postgres isn't provided)
-DB_URL = os.environ.get("DATABASE_URL", f"sqlite:///{os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'chatbot_orm.db')}")
+SQLITE_FALLBACK = f"sqlite:///{os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'chatbot_orm.db')}"
+DB_URL = os.environ.get("DATABASE_URL", SQLITE_FALLBACK)
+
+# Supabase requires the postgresql:// scheme (not postgres://)
+if DB_URL.startswith("postgres://"):
+    DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
 
 class ConversationState:
     def __init__(self):
@@ -16,9 +21,10 @@ class ConversationState:
         if DB_URL.startswith("postgresql"):
             engine_kwargs.update({
                 "pool_pre_ping": True,
-                "pool_recycle": 300,
+                "pool_recycle": 280,
                 "pool_size": 5,
-                "max_overflow": 10
+                "max_overflow": 10,
+                "connect_args": {"sslmode": "require", "connect_timeout": 10},
             })
         self.engine = create_engine(DB_URL, **engine_kwargs)
         Base.metadata.create_all(self.engine)
