@@ -37,6 +37,7 @@ def register():
     if len(password) < 6:
         return jsonify({'error': 'Password must be at least 6 characters.'}), 400
 
+    _state._ensure_initialized()
     db = get_db()
     try:
         # Check if username already exists
@@ -72,6 +73,7 @@ def login():
     if not username or not password:
         return jsonify({'error': 'Username and password are required.'}), 400
 
+    _state._ensure_initialized()
     db = get_db()
     try:
         user = db.query(User).filter_by(username=username).first()
