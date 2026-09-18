@@ -2,17 +2,18 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import MessageBubble from './MessageBubble';
 import {
   createSession, sendMessage, getSessions, getSessionMessages,
-  deleteSession, getModels, isAuthenticated, getUsername, logout
+  deleteSession, renameSession, getModels, isAuthenticated, getUsername, logout
 } from '../services/chatService';
 import TextareaAutosize from 'react-textarea-autosize';
 import {
   Mic, MicOff, Send, PlusCircle, Volume2, VolumeX, Bot,
-  Moon, Sun, LogOut, Menu, Trash2, ChevronDown, Cpu, X
+  Moon, Sun, LogOut, Menu, Trash2, ChevronDown, Cpu, X,
+  Paperclip, FileText, Download, Search, Edit2, Check
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import './ChatWindow.css';
 
-// ── Audio ─────────────────────────────────────────────────────────────────────
+// ── Audio Feedback Synthesizer ───────────────────────────────────────────────
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const playTone = (freq, type, dur, vol) => {
   if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -28,7 +29,6 @@ const playTone = (freq, type, dur, vol) => {
 const playSendSound    = () => { playTone(400,'sine',0.1,0.1); setTimeout(()=>playTone(600,'sine',0.15,0.1),50); };
 const playReceiveSound = () => { playTone(800,'sine',0.1,0.1); setTimeout(()=>playTone(1200,'sine',0.2,0.1),50); };
 
-// ── Component ─────────────────────────────────────────────────────────────────
 function ChatWindow() {
   const [messages, setMessages]         = useState([]);
   const [input, setInput]               = useState('');
@@ -41,10 +41,19 @@ function ChatWindow() {
   const [darkMode, setDarkMode]         = useState(() => localStorage.getItem('darkMode') === 'true');
   const [username, setUsername]         = useState('User');
 
-  // Chat history sidebar
+  // Document attachment
+  const [attachment, setAttachment]     = useState(null);
+  const fileInputRef                    = useRef(null);
+
+  // Chat history sidebar & Search Filter
   const [sessions, setSessions]         = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [loadingSessions, setLoadingSessions] = useState(false);
+  const [searchQuery, setSearchQuery]   = useState('');
+
+  // Inline rename session
+  const [editingSessionId, setEditingSessionId] = useState(null);
+  const [editTitleInput, setEditTitleInput]     = useState('');
 
   // Model switcher
   const [models, setModels]             = useState([]);
@@ -108,7 +117,7 @@ function ChatWindow() {
       setIsConnected(true);
       setMessages([{
         id: Date.now(), sender: 'bot', isNew: false,
-        text: `Hello, ${getUsername() || 'there'}! 👋 Welcome to NovaMind. Ask me anything — coding, science, math, history, creative writing, and more!`,
+        text: `Hello, ${getUsername() || 'there'}! 👋 Welcome to NovaMind. Ask me anything, or attach files/documents to analyze!`,
       }]);
       loadSessions();
     } catch {
@@ -123,7 +132,7 @@ function ChatWindow() {
   // ── Auto-scroll ──────────────────────────────────────────────────────────────
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isLoading]);
 
-  // ── Load a past session ──────────────────────────────────────────────────────
+  // ── Load past session ────────────────────────────────────────────────────────
   const loadPastSession = async (sess) => {
     try {
       const data = await getSessionMessages(sess.session_id);
@@ -134,7 +143,40 @@ function ChatWindow() {
     } catch {}
   };
 
-  // ── Delete session ───────────────────────────────────────────────────────────
+  // ── File Selection & Parsing ─────────────────────────────────────────────────
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      setAttachment({
+        name: file.name,
+        size: (file.size / 1024).toFixed(1) + ' KB',
+        content: evt.target.result
+      });
+    };
+    reader.readAsText(file);
+    e.target.value = null;
+  };
+
+  // ── Session Rename ───────────────────────────────────────────────────────────
+  const handleStartRename = (e, sess) => {
+    e.stopPropagation();
+    setEditingSessionId(sess.session_id);
+    setEditTitleInput(sess.title || 'Untitled');
+  };
+
+  const handleSaveRename = async (e, sessId) => {
+    e.stopPropagation();
+    if (!editTitleInput.trim()) return;
+    try {
+      await renameSession(sessId, editTitleInput.trim());
+      setSessions(prev => prev.map(s => s.session_id === sessId ? { ...s, title: editTitleInput.trim() } : s));
+      setEditingSessionId(null);
+    } catch {}
+  };
+
+  // ── Delete Session ───────────────────────────────────────────────────────────
   const handleDeleteSession = async (e, sessId) => {
     e.stopPropagation();
     try {
@@ -144,32 +186,53 @@ function ChatWindow() {
     } catch {}
   };
 
-  // ── New chat ─────────────────────────────────────────────────────────────────
-  const handleNewChat = () => { setMessages([]); setSessionId(null); setInput(''); initNewSession(); };
+  // ── Export Chat ──────────────────────────────────────────────────────────────
+  const handleExportChat = () => {
+    if (messages.length === 0) return;
+    const exportText = messages.map(m => `### ${m.sender === 'user' ? 'User' : 'NovaMind'}:\n${m.text}\n`).join('\n---\n\n');
+    const blob = new Blob([exportText], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `NovaMind-Chat-${sessionId || 'export'}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── New Chat ─────────────────────────────────────────────────────────────────
+  const handleNewChat = () => { setMessages([]); setSessionId(null); setInput(''); setAttachment(null); initNewSession(); };
 
   // ── Logout ───────────────────────────────────────────────────────────────────
   const handleLogout = () => { logout(); navigate('/login'); };
 
-  // ── TTS ──────────────────────────────────────────────────────────────────────
+  // ── Speech Synthesis ────────────────────────────────────────────────────────
   const speakText = t => { if ('speechSynthesis' in window) { window.speechSynthesis.cancel(); window.speechSynthesis.speak(new SpeechSynthesisUtterance(t)); } };
 
-  // ── Mic ──────────────────────────────────────────────────────────────────────
+  // ── Speech Recognition ───────────────────────────────────────────────────────
   const toggleListening = () => {
     if (isListening) { recognitionRef.current?.stop(); setIsListening(false); }
     else             { recognitionRef.current?.start(); setIsListening(true); }
   };
 
-  // ── Send message ─────────────────────────────────────────────────────────────
+  // ── Send Message ─────────────────────────────────────────────────────────────
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
-    const userText = input.trim();
-    setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: userText }]);
+    if ((!input.trim() && !attachment) || isLoading) return;
+
+    let fullPrompt = input.trim();
+    if (attachment) {
+      fullPrompt = `[Attached Document: ${attachment.name}]\n\`\`\`\n${attachment.content.slice(0, 3000)}\n\`\`\`\n\n${fullPrompt || 'Please summarize or analyze this document.'}`;
+    }
+
+    const userDisplayText = attachment ? `📄 [${attachment.name}]\n${input.trim()}` : input.trim();
+    setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: userDisplayText }]);
+    
     setInput('');
+    setAttachment(null);
     setIsLoading(true);
     playSendSound();
 
     try {
-      const result = await sendMessage(userText, sessionId, selectedModel);
+      const result = await sendMessage(fullPrompt, sessionId, selectedModel);
       const botMsg = {
         id: Date.now() + 1, sender: 'bot', isNew: true,
         text: result.bot_response, intent: result.intent, confidence: result.confidence,
@@ -177,7 +240,7 @@ function ChatWindow() {
       setMessages(prev => prev.map(m => ({ ...m, isNew: false })).concat(botMsg));
       playReceiveSound();
       if (voiceEnabled) speakText(result.bot_response);
-      // Update session ID if new, then refresh sidebar
+
       if (result.session_id && result.session_id !== sessionId) {
         setSessionId(result.session_id);
         setActiveSessionId(result.session_id);
@@ -196,11 +259,12 @@ function ChatWindow() {
   };
 
   const currentModelName = models.find(m => m.id === selectedModel)?.name || 'Llama 3.3 70B';
+  const filteredSessions = sessions.filter(s => (s.title || '').toLowerCase().includes(searchQuery.toLowerCase()));
 
   return (
     <div className={`chat-layout has-sidebar ${darkMode ? 'dark' : ''}`}>
 
-      {/* Backdrop — shown on tablet/mobile when sidebar is open */}
+      {/* Mobile/Tablet Backdrop */}
       {isSidebarOpen && (
         <div
           className="sidebar-backdrop"
@@ -223,33 +287,63 @@ function ChatWindow() {
             <PlusCircle size={15} /> New Chat
           </button>
 
+          {/* Search Filter */}
+          <div className="search-box">
+            <Search size={13} className="search-icon" />
+            <input
+              type="text"
+              placeholder="Search chats…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
+
           <div className="recent-chats">
             <p className="section-title">
-              {loadingSessions ? 'Loading…' : `Recent (${sessions.length})`}
+              {loadingSessions ? 'Loading…' : `Recent (${filteredSessions.length})`}
             </p>
 
-            {sessions.length === 0 && !loadingSessions && (
-              <p className="empty-history">No past chats yet</p>
+            {filteredSessions.length === 0 && !loadingSessions && (
+              <p className="empty-history">No chats found</p>
             )}
 
-            {sessions.map(s => (
+            {filteredSessions.map(s => (
               <div
                 key={s.session_id}
                 className={`chat-history-item ${s.session_id === activeSessionId ? 'active' : ''}`}
                 onClick={() => loadPastSession(s)}
                 title={s.title}
               >
-                <div className="history-item-inner">
-                  <span className="history-title">{s.title || 'Untitled'}</span>
-                  <span className="history-meta">{s.message_count} msgs</span>
-                </div>
-                <button
-                  className="delete-session-btn"
-                  onClick={e => handleDeleteSession(e, s.session_id)}
-                  title="Delete chat"
-                >
-                  <Trash2 size={12} />
-                </button>
+                {editingSessionId === s.session_id ? (
+                  <div className="rename-input-wrapper" onClick={e => e.stopPropagation()}>
+                    <input
+                      type="text"
+                      className="rename-input"
+                      value={editTitleInput}
+                      onChange={e => setEditTitleInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleSaveRename(e, s.session_id); }}
+                      autoFocus
+                    />
+                    <button className="icon-action-btn" onClick={e => handleSaveRename(e, s.session_id)}>
+                      <Check size={12} />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="history-item-inner">
+                      <span className="history-title">{s.title || 'Untitled'}</span>
+                      <span className="history-meta">{s.message_count} msgs</span>
+                    </div>
+                    <div className="item-actions">
+                      <button className="rename-session-btn" onClick={e => handleStartRename(e, s)} title="Rename chat">
+                        <Edit2 size={12} />
+                      </button>
+                      <button className="delete-session-btn" onClick={e => handleDeleteSession(e, s.session_id)} title="Delete chat">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
           </div>
@@ -266,7 +360,7 @@ function ChatWindow() {
         </div>
       </aside>
 
-      {/* ── Main ──────────────────────────────────────────────────────────── */}
+      {/* ── Main Workspace ───────────────────────────────────────────────── */}
       <div className="chat-main-wrapper">
 
         {/* Header */}
@@ -287,10 +381,7 @@ function ChatWindow() {
           <div className="header-actions">
             {/* Model Switcher */}
             <div className="model-switcher-wrapper">
-              <button
-                className="model-switcher-btn"
-                onClick={() => setShowModelMenu(o => !o)}
-              >
+              <button className="model-switcher-btn" onClick={() => setShowModelMenu(o => !o)}>
                 <Cpu size={14} />
                 <span className="btn-text">{currentModelName}</span>
                 <ChevronDown size={13} className={showModelMenu ? 'rotated' : ''} />
@@ -315,11 +406,19 @@ function ChatWindow() {
               )}
             </div>
 
+            {/* Export Chat */}
+            <button className="action-btn" onClick={handleExportChat} title="Export Chat Markdown">
+              <Download size={15} />
+              <span className="btn-text">Export</span>
+            </button>
+
+            {/* Dark Mode Toggle */}
             <button className="action-btn" onClick={() => setDarkMode(d => !d)} title="Toggle Dark Mode">
               {darkMode ? <Sun size={16} /> : <Moon size={16} />}
               <span className="btn-text">{darkMode ? 'Light' : 'Dark'}</span>
             </button>
 
+            {/* Voice Mode Toggle */}
             <button className={`action-btn ${voiceEnabled ? 'active' : ''}`} onClick={() => setVoiceEnabled(v => !v)}>
               {voiceEnabled ? <Volume2 size={16}/> : <VolumeX size={16}/>}
               <span className="btn-text">Voice</span>
@@ -346,10 +445,39 @@ function ChatWindow() {
           </div>
         </main>
 
-        {/* Footer */}
+        {/* Input Footer */}
         <footer className="chat-footer glass-effect">
+          {/* Attachment Preview Badge */}
+          {attachment && (
+            <div className="attachment-badge">
+              <FileText size={14} />
+              <span className="badge-name">{attachment.name}</span>
+              <span className="badge-size">({attachment.size})</span>
+              <button className="remove-attachment" onClick={() => setAttachment(null)}>
+                <X size={13} />
+              </button>
+            </div>
+          )}
+
           <div className="input-container">
-            <button className={`mic-btn ${isListening ? 'listening' : ''}`} onClick={toggleListening}>
+            {/* Attachment Pin */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+              accept=".txt,.pdf,.md,.json,.csv,.js,.py,.html,.css"
+            />
+            <button
+              className="attach-btn"
+              onClick={() => fileInputRef.current?.click()}
+              title="Attach File/Document"
+            >
+              <Paperclip size={18} />
+            </button>
+
+            {/* Mic Speech Button */}
+            <button className={`mic-btn ${isListening ? 'listening' : ''}`} onClick={toggleListening} title="Voice Input">
               {isListening ? <Mic size={18} /> : <MicOff size={18} />}
             </button>
 
@@ -359,19 +487,19 @@ function ChatWindow() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask me anything… (Shift+Enter for new line)"
+              placeholder={attachment ? "Ask a question about this document…" : "Ask me anything… (Shift+Enter for new line)"}
             />
 
             <button
-              className={`send-btn ${input.trim() ? 'active' : ''}`}
+              className={`send-btn ${(input.trim() || attachment) ? 'active' : ''}`}
               onClick={handleSend}
-              disabled={isLoading || !input.trim()}
+              disabled={isLoading || (!input.trim() && !attachment)}
             >
               <Send size={18} />
             </button>
           </div>
           <p className="footer-disclaimer">
-            Using <strong>{currentModelName}</strong> · AI can make mistakes. Verify important info.
+            Using <strong>{currentModelName}</strong> · NovaMind PWA ready · Verify important info.
           </p>
         </footer>
       </div>
@@ -379,4 +507,4 @@ function ChatWindow() {
   );
 }
 
-export default ChatWindow;
+export default ChatWindow;
