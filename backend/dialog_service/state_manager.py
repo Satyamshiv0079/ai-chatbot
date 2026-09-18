@@ -22,14 +22,29 @@ class ConversationState:
             engine_kwargs.update({
                 "pool_pre_ping": True,
                 "pool_recycle": 280,
-                "pool_size": 5,
-                "max_overflow": 10,
-                "connect_args": {"sslmode": "require", "connect_timeout": 10},
+                "pool_size": 3,
+                "max_overflow": 5,
+                "connect_args": {
+                    "sslmode": "require",
+                    "connect_timeout": 10,
+                },
             })
-        self.engine = create_engine(DB_URL, **engine_kwargs)
+
+        # Try PostgreSQL first; fall back to SQLite if unreachable at startup
+        try:
+            self.engine = create_engine(DB_URL, **engine_kwargs)
+            # Test connection quickly
+            with self.engine.connect() as conn:
+                conn.execute(sqlalchemy_text("SELECT 1"))
+            print(f"[DB] Connected to PostgreSQL successfully")
+        except Exception as e:
+            print(f"[DB] PostgreSQL unreachable ({e}), falling back to SQLite")
+            self.engine = create_engine(SQLITE_FALLBACK, echo=False)
+
         Base.metadata.create_all(self.engine)
         self._run_migrations()
         self.Session = scoped_session(sessionmaker(bind=self.engine))
+
 
     def _run_migrations(self):
         """Safely add new columns to existing DB without data loss."""
