@@ -12,7 +12,15 @@ DB_URL = os.environ.get("DATABASE_URL", f"sqlite:///{os.path.join(os.path.dirnam
 
 class ConversationState:
     def __init__(self):
-        self.engine = create_engine(DB_URL, echo=False)
+        engine_kwargs = {"echo": False}
+        if DB_URL.startswith("postgresql"):
+            engine_kwargs.update({
+                "pool_pre_ping": True,
+                "pool_recycle": 300,
+                "pool_size": 5,
+                "max_overflow": 10
+            })
+        self.engine = create_engine(DB_URL, **engine_kwargs)
         Base.metadata.create_all(self.engine)
         self._run_migrations()
         self.Session = scoped_session(sessionmaker(bind=self.engine))
