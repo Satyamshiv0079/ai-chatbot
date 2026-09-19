@@ -162,7 +162,7 @@ MODEL_NAMES = {
     "meta-llama/llama-4-maverick-17b-128e-instruct": "Llama 4 Maverick 17B",
 }
 
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "llama-3.1-8b-instant"
 
 # Only show free models in the UI (filter out paid/audio/embed models)
 FREE_MODEL_IDS = set(MODEL_NAMES.keys())
@@ -221,10 +221,11 @@ def chat():
     session_id = data.get('session_id')
     model = data.get('model', DEFAULT_MODEL)
 
-    # Validate model — accept any model from Groq's live list or known names
-    known_ids = {m["id"] for m in _fetch_groq_models()}
-    if model not in known_ids and model not in MODEL_NAMES:
-        model = DEFAULT_MODEL
+    # Validate model — use first available from live list if requested one isn't accessible
+    available = _fetch_groq_models()
+    available_ids = {m["id"] for m in available}
+    if model not in available_ids:
+        model = available[0]["id"] if available else DEFAULT_MODEL
 
     nlp_result = nlp.process(user_message)
     intent = nlp_result['intent']

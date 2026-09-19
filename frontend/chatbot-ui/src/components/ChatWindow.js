@@ -57,7 +57,7 @@ function ChatWindow() {
 
   // Model switcher
   const [models, setModels]             = useState([]);
-  const [selectedModel, setSelectedModel] = useState('llama-3.3-70b-versatile');
+  const [selectedModel, setSelectedModel] = useState('llama-3.1-8b-instant');
   const [showModelMenu, setShowModelMenu] = useState(false);
 
   const bottomRef      = useRef(null);
