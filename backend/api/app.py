@@ -155,11 +155,15 @@ def delete_session(session_id):
 
 # ── Chat (with model switcher) ────────────────────────────────────────────────
 ALLOWED_MODELS = {
-    "llama-3.3-70b-versatile": "Llama 3.3 70B",
-    "llama-3.1-8b-instant": "Llama 3.1 8B (Fast)",
-    "mixtral-8x7b-32768": "Mixtral 8x7B",
-    "gemma2-9b-it": "Gemma 2 9B",
+    "llama-3.3-70b-versatile":        "Llama 3.3 70B",
+    "llama-3.1-8b-instant":           "Llama 3.1 8B (Fast)",
+    "llama3-70b-8192":                "Llama 3 70B",
+    "llama3-8b-8192":                 "Llama 3 8B",
+    "gemma2-9b-it":                   "Gemma 2 9B",
+    "mixtral-8x7b-32768":             "Mixtral 8x7B",
 }
+
+DEFAULT_MODEL = "llama3-70b-8192"  # Reliable fallback always available on Groq
 
 @app.route('/models', methods=['GET'])
 @jwt_required()
@@ -178,11 +182,11 @@ def chat():
 
     user_message = data['message']
     session_id = data.get('session_id')
-    model = data.get('model', 'llama-3.3-70b-versatile')
+    model = data.get('model', DEFAULT_MODEL)
 
-    # Validate model
+    # Validate model — fall back to reliable default if unknown
     if model not in ALLOWED_MODELS:
-        model = 'llama-3.3-70b-versatile'
+        model = DEFAULT_MODEL
 
     nlp_result = nlp.process(user_message)
     intent = nlp_result['intent']
