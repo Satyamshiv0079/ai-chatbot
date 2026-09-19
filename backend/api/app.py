@@ -154,20 +154,57 @@ def delete_session(session_id):
 
 
 # ── Chat (with model switcher) ────────────────────────────────────────────────
-ALLOWED_MODELS = {
-    "llama-3.3-70b-versatile":                    "Llama 3.3 70B",
-    "llama-3.1-8b-instant":                       "Llama 3.1 8B (Fast)",
-    "meta-llama/llama-4-scout-17b-16e-instruct":  "Llama 4 Scout 17B",
-    "gemma2-9b-it":                               "Gemma 2 9B",
-    "openai/gpt-oss-20b":                         "GPT OSS 20B",
+# Friendly display names for known models
+MODEL_NAMES = {
+    "llama-3.3-70b-versatile":                   "Llama 3.3 70B",
+    "llama-3.1-8b-instant":                      "Llama 3.1 8B (Fast)",
+    "meta-llama/llama-4-scout-17b-16e-instruct": "Llama 4 Scout 17B",
+    "meta-llama/llama-4-maverick-17b-128e-instruct": "Llama 4 Maverick 17B",
+    "gemma2-9b-it":                              "Gemma 2 9B",
+    "openai/gpt-oss-20b":                        "GPT OSS 20B",
+    "openai/gpt-oss-120b":                       "GPT OSS 120B",
+    "groq/compound-mini":                        "Groq Compound Mini",
 }
 
-DEFAULT_MODEL = "llama-3.1-8b-instant"  # Fast, always available on Groq free tier
+DEFAULT_MODEL = "llama-3.1-8b-instant"
+
+# Cache so we don't hit Groq on every request
+_models_cache = None
+
+def _fetch_groq_models():
+    """Fetch available models from Groq API dynamically."""
+    global _models_cache
+    if _models_cache:
+        return _models_cache
+    try:
+        import urllib.request, json as _json
+        req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization": f"Bearer {os.environ.get('GROQ_API_KEY', '')}"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = _json.loads(resp.read())
+        # Filter to chat models only (exclude audio/embed)
+        chat_ids = [
+            m["id"] for m in data.get("data", [])
+            if "whisper" not in m["id"] and "embed" not in m["id"]
+        ]
+        _models_cache = [
+            {"id": mid, "name": MODEL_NAMES.get(mid, mid)}
+            for mid in sorted(chat_ids)
+        ]
+        return _models_cache
+    except Exception:
+        # Fallback to known-good models
+        return [
+            {"id": "llama-3.1-8b-instant",  "name": "Llama 3.1 8B (Fast)"},
+            {"id": "gemma2-9b-it",           "name": "Gemma 2 9B"},
+        ]
 
 @app.route('/models', methods=['GET'])
 @jwt_required()
 def list_models():
-    return jsonify({"models": [{"id": k, "name": v} for k, v in ALLOWED_MODELS.items()]})
+    return jsonify({"models": _fetch_groq_models()})
 
 
 @app.route('/chat', methods=['POST'])
@@ -183,8 +220,9 @@ def chat():
     session_id = data.get('session_id')
     model = data.get('model', DEFAULT_MODEL)
 
-    # Validate model — fall back to reliable default if unknown
-    if model not in ALLOWED_MODELS:
+    # Validate model — accept any model from Groq's live list or known names
+    known_ids = {m["id"] for m in _fetch_groq_models()}
+    if model not in known_ids and model not in MODEL_NAMES:
         model = DEFAULT_MODEL
 
     nlp_result = nlp.process(user_message)
