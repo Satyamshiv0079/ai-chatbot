@@ -104,8 +104,6 @@ function ChatWindow() {
         { id: 'llama-3.1-8b-instant',                           name: 'Llama 3.1 8B (Fast)' },
         { id: 'meta-llama/llama-4-scout-17b-16e-instruct',      name: 'Llama 4 Scout 17B' },
         { id: 'meta-llama/llama-4-maverick-17b-128e-instruct',  name: 'Llama 4 Maverick 17B' },
-        { id: 'openai/gpt-oss-20b',                             name: 'GPT OSS 20B' },
-        { id: 'groq/compound-mini',                             name: 'Groq Compound Mini' },
       ])
     );
   }, []);

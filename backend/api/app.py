@@ -154,18 +154,18 @@ def delete_session(session_id):
 
 
 # ── Chat (with model switcher) ────────────────────────────────────────────────
-# Friendly display names for known models (all currently ACTIVE on Groq)
+# Friendly display names — CONFIRMED FREE models on Groq free tier
 MODEL_NAMES = {
-    "llama-3.1-8b-instant":                          "Llama 3.1 8B (Fast)",
     "llama-3.3-70b-versatile":                       "Llama 3.3 70B",
+    "llama-3.1-8b-instant":                          "Llama 3.1 8B (Fast)",
     "meta-llama/llama-4-scout-17b-16e-instruct":     "Llama 4 Scout 17B",
     "meta-llama/llama-4-maverick-17b-128e-instruct": "Llama 4 Maverick 17B",
-    "openai/gpt-oss-20b":                            "GPT OSS 20B",
-    "openai/gpt-oss-120b":                           "GPT OSS 120B",
-    "groq/compound-mini":                            "Groq Compound Mini",
 }
 
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
+
+# Only show free models in the UI (filter out paid/audio/embed models)
+FREE_MODEL_IDS = set(MODEL_NAMES.keys())
 
 # Cache so we don't hit Groq on every request
 _models_cache = None
@@ -188,9 +188,11 @@ def _fetch_groq_models():
             m["id"] for m in data.get("data", [])
             if "whisper" not in m["id"] and "embed" not in m["id"]
         ]
+        # Only show confirmed free models
         _models_cache = [
-            {"id": mid, "name": MODEL_NAMES.get(mid, mid)}
-            for mid in sorted(chat_ids)
+            {"id": mid, "name": MODEL_NAMES[mid]}
+            for mid in MODEL_NAMES
+            if mid in {m["id"] for m in data.get("data", [])}
         ]
         return _models_cache
     except Exception:
