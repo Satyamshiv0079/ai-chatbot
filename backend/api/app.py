@@ -154,19 +154,18 @@ def delete_session(session_id):
 
 
 # ── Chat (with model switcher) ────────────────────────────────────────────────
-# Friendly display names for known models
+# Friendly display names for known models (all currently ACTIVE on Groq)
 MODEL_NAMES = {
-    "llama-3.3-70b-versatile":                   "Llama 3.3 70B",
-    "llama-3.1-8b-instant":                      "Llama 3.1 8B (Fast)",
-    "meta-llama/llama-4-scout-17b-16e-instruct": "Llama 4 Scout 17B",
+    "llama-3.1-8b-instant":                          "Llama 3.1 8B (Fast)",
+    "llama-3.3-70b-versatile":                       "Llama 3.3 70B",
+    "meta-llama/llama-4-scout-17b-16e-instruct":     "Llama 4 Scout 17B",
     "meta-llama/llama-4-maverick-17b-128e-instruct": "Llama 4 Maverick 17B",
-    "gemma2-9b-it":                              "Gemma 2 9B",
-    "openai/gpt-oss-20b":                        "GPT OSS 20B",
-    "openai/gpt-oss-120b":                       "GPT OSS 120B",
-    "groq/compound-mini":                        "Groq Compound Mini",
+    "openai/gpt-oss-20b":                            "GPT OSS 20B",
+    "openai/gpt-oss-120b":                           "GPT OSS 120B",
+    "groq/compound-mini":                            "Groq Compound Mini",
 }
 
-DEFAULT_MODEL = "llama-3.1-8b-instant"
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
 # Cache so we don't hit Groq on every request
 _models_cache = None

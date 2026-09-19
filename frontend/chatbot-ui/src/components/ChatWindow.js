@@ -57,7 +57,7 @@ function ChatWindow() {
 
   // Model switcher
   const [models, setModels]             = useState([]);
-  const [selectedModel, setSelectedModel] = useState('llama-3.1-8b-instant');
+  const [selectedModel, setSelectedModel] = useState('llama-3.3-70b-versatile');
   const [showModelMenu, setShowModelMenu] = useState(false);
 
   const bottomRef      = useRef(null);
@@ -100,11 +100,12 @@ function ChatWindow() {
   useEffect(() => {
     getModels().then(setModels).catch(() =>
       setModels([
-        { id: 'llama-3.1-8b-instant',                      name: 'Llama 3.1 8B (Fast)' },
-        { id: 'llama-3.3-70b-versatile',                    name: 'Llama 3.3 70B' },
-        { id: 'meta-llama/llama-4-scout-17b-16e-instruct',  name: 'Llama 4 Scout 17B' },
-        { id: 'gemma2-9b-it',                               name: 'Gemma 2 9B' },
-        { id: 'openai/gpt-oss-20b',                         name: 'GPT OSS 20B' },
+        { id: 'llama-3.3-70b-versatile',                        name: 'Llama 3.3 70B' },
+        { id: 'llama-3.1-8b-instant',                           name: 'Llama 3.1 8B (Fast)' },
+        { id: 'meta-llama/llama-4-scout-17b-16e-instruct',      name: 'Llama 4 Scout 17B' },
+        { id: 'meta-llama/llama-4-maverick-17b-128e-instruct',  name: 'Llama 4 Maverick 17B' },
+        { id: 'openai/gpt-oss-20b',                             name: 'GPT OSS 20B' },
+        { id: 'groq/compound-mini',                             name: 'Groq Compound Mini' },
       ])
     );
   }, []);
