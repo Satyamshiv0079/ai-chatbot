@@ -63,7 +63,7 @@ export const getModels = async () => {
 };
 
 // ── Chat API ──────────────────────────────────────────────────────────────────
-export const sendMessage = async (message, sessionId, model = 'llama3-70b-8192') => {
+export const sendMessage = async (message, sessionId, model = 'llama-3.1-8b-instant') => {
   const res = await axios.post(
     `${API_URL}/chat`,
     { message, session_id: sessionId, model },

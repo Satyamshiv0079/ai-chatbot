@@ -155,15 +155,14 @@ def delete_session(session_id):
 
 # ── Chat (with model switcher) ────────────────────────────────────────────────
 ALLOWED_MODELS = {
-    "llama-3.3-70b-versatile":        "Llama 3.3 70B",
-    "llama-3.1-8b-instant":           "Llama 3.1 8B (Fast)",
-    "llama3-70b-8192":                "Llama 3 70B",
-    "llama3-8b-8192":                 "Llama 3 8B",
-    "gemma2-9b-it":                   "Gemma 2 9B",
-    "mixtral-8x7b-32768":             "Mixtral 8x7B",
+    "llama-3.3-70b-versatile":                    "Llama 3.3 70B",
+    "llama-3.1-8b-instant":                       "Llama 3.1 8B (Fast)",
+    "meta-llama/llama-4-scout-17b-16e-instruct":  "Llama 4 Scout 17B",
+    "gemma2-9b-it":                               "Gemma 2 9B",
+    "openai/gpt-oss-20b":                         "GPT OSS 20B",
 }
 
-DEFAULT_MODEL = "llama3-70b-8192"  # Reliable fallback always available on Groq
+DEFAULT_MODEL = "llama-3.1-8b-instant"  # Fast, always available on Groq free tier
 
 @app.route('/models', methods=['GET'])
 @jwt_required()

@@ -57,7 +57,7 @@ function ChatWindow() {
 
   // Model switcher
   const [models, setModels]             = useState([]);
-  const [selectedModel, setSelectedModel] = useState('llama3-70b-8192');
+  const [selectedModel, setSelectedModel] = useState('llama-3.1-8b-instant');
   const [showModelMenu, setShowModelMenu] = useState(false);
 
   const bottomRef      = useRef(null);
@@ -100,15 +100,11 @@ function ChatWindow() {
   useEffect(() => {
     getModels().then(setModels).catch(() =>
       setModels([
-        { id: 'llama3-70b-8192',            name: 'Llama 3 70B' },
-        { id: 'llama-3.3-70b-versatile',     name: 'Llama 3.3 70B' },
-        { id: 'llama3-8b-8192',             name: 'Llama 3 8B (Fast)' },
-        { id: 'llama-3.1-8b-instant',        name: 'Llama 3.1 8B (Fast)' },
-        { id: 'gemma2-9b-it',               name: 'Gemma 2 9B' },
-        { id: 'mixtral-8x7b-32768',         name: 'Mixtral 8x7B' },
-        { id: 'llama-3.1-8b-instant',    name: 'Llama 3.1 8B (Fast)' },
-        { id: 'mixtral-8x7b-32768',      name: 'Mixtral 8x7B' },
-        { id: 'gemma2-9b-it',            name: 'Gemma 2 9B' },
+        { id: 'llama-3.1-8b-instant',                      name: 'Llama 3.1 8B (Fast)' },
+        { id: 'llama-3.3-70b-versatile',                    name: 'Llama 3.3 70B' },
+        { id: 'meta-llama/llama-4-scout-17b-16e-instruct',  name: 'Llama 4 Scout 17B' },
+        { id: 'gemma2-9b-it',                               name: 'Gemma 2 9B' },
+        { id: 'openai/gpt-oss-20b',                         name: 'GPT OSS 20B' },
       ])
     );
   }, []);
