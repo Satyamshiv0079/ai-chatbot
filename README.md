@@ -78,8 +78,54 @@ The platform operates in two distinct, production-engineered operational modes:
 - **Semantic Chunking**: LangChain recursive text splitter with 800 character chunk size and 120 character overlap to maintain context across chunk boundaries.
 - **Dense Vector Embeddings**: SentenceTransformer (`all-MiniLM-L6-v2`) generating 384-dimensional normalized vectors running locally on CPU.
 - **Isolated Vector Storage**: Per-user FAISS `IndexFlatIP` indices partitioned at `backend/vector_stores/<user_id>/`. Strict multi-tenant isolation guarantees zero cross-user data leakage.
-- **Strict Grounded Answering**: Prompt constraints enforce that answers are derived strictly from retrieved context. If information is not in the documents, the model responds: *"I cannot find the answer to that in the provided documents."*
+- **Strict Grounded Answering**: Prompt constraints enforce that answers are derived strictly from retrieved context. If information is not in the documents, the model responds: *"I couldn't find this information in the provided documents."*
 - **Verifiable Source Citations**: Responses return structured source metadata rendered as interactive badges in the UI displaying document name, page number, similarity percentage, and preview snippet.
+
+### 🔄 Runtime RAG Pipeline Flow
+
+```mermaid
+flowchart TD
+    A["User Question"] --> B["JWT Authentication"]
+    B --> C["User ID Extracted"]
+    C --> D["SentenceTransformer (all-MiniLM-L6-v2)<br/>(query embedding: 384 dimensions)"]
+    D --> E["FAISS Vector Store (backend/vector_stores/&lt;user_id&gt;/)<br/>(cosine similarity search, top-k chunks)"]
+    E --> F["LangChain Document Objects (LCDocument)<br/>(page_content + metadata: doc_name, page, chunk_idx)"]
+    F --> G["LangChain BaseRetriever (UserScopedRetriever)<br/>(retrieves relevant documents for user)"]
+    G --> H["LangChain ChatPromptTemplate<br/>(strict context injection + zero-hallucination rules)"]
+    H --> I["LangChain ChatGroq LLM<br/>(with RunnableWithFallbacks: gpt-oss-20b → gpt-oss-120b → qwen3.8-27b)"]
+    I --> J["LangChain StrOutputParser<br/>(clean string output)"]
+    J --> K["Response + Structured Sources<br/>(doc name, page number, similarity %, snippet)"]
+    K --> L["React UI (Ask My Documents Mode)"]
+```
+
+---
+
+## 💡 Architectural Decisions & Technical Q&A
+
+### Why embeddings?
+Large Language Models process tokens, but cannot perform real-time, low-latency similarity searches across thousands of unstructured document passages. Embeddings convert text into dense mathematical vectors where semantically similar phrases are located close to each other in high-dimensional vector space. This allows the system to retrieve passages based on conceptual meaning (e.g., matching "leave policy" with "vacation entitlement") rather than brittle keyword matching.
+
+### Why chunking?
+Full documents (PDFs, DOCXs, TXTs) easily exceed context window budgets and introduce extraneous noise that degrades LLM attention. Chunking divides documents into focused, retrievable semantic passages (800 characters with 120 character overlap). The overlap ensures that context, numbers, and sentences spanning boundary breaks are never severed, preserving semantic completeness during retrieval.
+
+### Why FAISS?
+Facebook AI Similarity Search (FAISS) is an industry-standard, high-performance C++ vector search library. Using `faiss.IndexFlatIP` (Inner Product on normalized embeddings) gives exact cosine similarity matching with microsecond search latency. It runs completely in-process on CPU without needing external managed vector databases (reducing infrastructure cost and network latency to zero), while easily persisting per-user index directories (`backend/vector_stores/<user_id>/`) for strict multi-tenant isolation.
+
+### Why LangChain?
+LangChain provides standard composable primitives for production GenAI architectures. In this application, LangChain is deeply integrated across the runtime pipeline:
+1. Custom `UserScopedRetriever` subclasses `BaseRetriever` to decouple retrieval from model generation.
+2. Retrieved chunks are normalized into standard LangChain `Document` objects containing rich metadata.
+3. `ChatPromptTemplate` enforces rigorous system prompts and zero-hallucination guardrails.
+4. `ChatGroq` is composed with `.with_fallbacks()` into a resilient LangChain Expression Language (LCEL) sequence (`prompt | llm | StrOutputParser()`).
+
+### Why Sentence Transformers?
+`all-MiniLM-L6-v2` is a specialized bi-encoder fine-tuned for semantic search. It projects text into a compact 384-dimensional dense vector space with exceptional balance between speed and retrieval accuracy. It runs entirely on local CPU via PyTorch in single-digit milliseconds, eliminating recurring embedding API billing and third-party network failure points.
+
+### Why BERT? (for intent classification, NOT RAG embeddings!)
+BERT (`bert-base-uncased`) is a bidirectional transformer encoder fine-tuned in `nlp_service` specifically for sequence classification and entity slot extraction (e.g., greeting, tracking orders, cancellations, refunds) in conversational Mode A. **BERT is NOT used for RAG vector embeddings.** BERT produces token-level contextual representations that require pooling layers and is not contrastively trained for sentence similarity, whereas `SentenceTransformers` (`all-MiniLM-L6-v2`) is explicitly trained using contrastive loss (Cosine Similarity Loss) to generate dense document embeddings for semantic search.
+
+### Why Groq?
+Groq's custom Language Processing Units (LPUs) provide near-instantaneous inference speeds (hundreds of tokens per second) for state-of-the-art open models like `openai/gpt-oss-20b`, `openai/gpt-oss-120b`, and `qwen/qwen3.8-27b`. Because RAG already requires document retrieval before generation, Groq's high token throughput keeps total user wait time well under 1-2 seconds, creating a truly responsive conversational experience.
 
 ---
 

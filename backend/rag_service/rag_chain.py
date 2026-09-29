@@ -1,22 +1,28 @@
 import os
 from typing import List, Dict, Any, Optional
-from groq import Groq
 from dotenv import load_dotenv
+
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.documents import Document as LCDocument
+from langchain_groq import ChatGroq
 
 from .embedding_service import get_embedding_service
 from .vector_store import FAISSUserStore
+from .retriever import UserScopedRetriever
 
 load_dotenv()
 
 RAG_SYSTEM_PROMPT = (
-    "You are an expert AI document assistant designed to provide accurate answers strictly based on the user's provided document context.\n\n"
-    "CRITICAL RULES:\n"
-    "1. Answer the question using ONLY the information provided in the context below.\n"
-    "2. If the answer cannot be determined directly from the context, state clearly:\n"
-    "   \"I cannot find the answer to that in the provided documents.\"\n"
-    "3. Never make up facts, hallucinate, or extrapolate beyond what is explicitly written in the context.\n"
-    "4. When stating facts, cite the source document name and page number if available (e.g. \"According to [doc.pdf, Page 1]...\").\n"
-    "5. Format your response cleanly using Markdown."
+    "You are a document-grounded AI assistant.\n\n"
+    "Rules:\n"
+    "1. Answer using the supplied document context.\n"
+    "2. Do not invent facts.\n"
+    "3. Do not use unsupported information.\n"
+    "4. If the answer cannot be found in the retrieved context, say:\n"
+    "   \"I couldn't find this information in the provided documents.\"\n"
+    "5. Do not fabricate sources.\n"
+    "6. Keep answers clear and concise."
 )
 
 FALLBACK_MODELS = [
@@ -29,18 +35,108 @@ FALLBACK_MODELS = [
 
 class RAGPipeline:
     """
-    Production-ready RAG pipeline:
-    1. Embeds user query using SentenceTransformer.
-    2. Performs similarity search in user's isolated FAISS index.
-    3. Formulates a grounded context prompt.
-    4. Invokes Groq LLM with fallback resilience.
-    5. Returns grounded answer alongside structured source citations.
+    Production LangChain RAG pipeline:
+    1. LangChain BaseRetriever (UserScopedRetriever) embeds question via SentenceTransformer
+       and retrieves matching chunks from the user's isolated FAISS index.
+    2. LangChain Document objects are returned with full metadata.
+    3. Context is formatted from Document page_content and metadata.
+    4. LangChain ChatPromptTemplate constructs the grounded prompt.
+    5. LangChain ChatGroq LLM (with automated RunnableWithFallbacks) generates the answer.
+    6. LangChain StrOutputParser extracts the answer string.
+    7. Sources are structured directly from LangChain Document metadata outside the LLM.
     """
     def __init__(self, vector_store: Optional[FAISSUserStore] = None):
         self.embedding_service = get_embedding_service()
         self.vector_store = vector_store or FAISSUserStore()
-        api_key = os.environ.get("GROQ_API_KEY", "").strip()
-        self.client = Groq(api_key=api_key) if api_key and api_key != "your_groq_api_key_here" else None
+        self.api_key = os.environ.get("GROQ_API_KEY", "").strip()
+
+        # Build reusable ChatPromptTemplate
+        self.prompt_template = ChatPromptTemplate.from_messages([
+            ("system", RAG_SYSTEM_PROMPT),
+            (
+                "human",
+                "DOCUMENT CONTEXT:\n{context}\n\nUSER QUESTION:\n{question}\n\nGROUNDED ANSWER:"
+            )
+        ])
+
+    def get_retriever(
+        self,
+        user_id: str,
+        doc_ids: Optional[List[int]] = None,
+        top_k: int = 4,
+        min_similarity: float = 0.15
+    ) -> UserScopedRetriever:
+        """Instantiates a LangChain UserScopedRetriever bound to the authenticated user."""
+        return UserScopedRetriever(
+            user_id=user_id,
+            vector_store=self.vector_store,
+            embedding_service=self.embedding_service,
+            doc_ids=doc_ids,
+            top_k=top_k,
+            min_similarity=min_similarity
+        )
+
+    def build_llm_chain(self, model: str = "openai/gpt-oss-20b"):
+        """
+        Builds a LangChain LCEL Runnable:
+        ChatPromptTemplate | ChatGroq (with fallbacks) | StrOutputParser
+        """
+        primary_llm = ChatGroq(
+            model=model,
+            groq_api_key=self.api_key,
+            temperature=0.2,
+            max_tokens=1500
+        )
+
+        fallback_models = [fb for fb in FALLBACK_MODELS if fb != model]
+        fallback_llms = [
+            ChatGroq(
+                model=fb,
+                groq_api_key=self.api_key,
+                temperature=0.2,
+                max_tokens=1500
+            )
+            for fb in fallback_models
+        ]
+
+        robust_llm = primary_llm.with_fallbacks(fallback_llms) if fallback_llms else primary_llm
+        chain = self.prompt_template | robust_llm | StrOutputParser()
+        return chain
+
+    @staticmethod
+    def format_documents(docs: List[LCDocument]) -> str:
+        """Formats LangChain Document objects into a clean context string."""
+        context_parts = []
+        for doc in docs:
+            doc_name = doc.metadata.get("document_name", "Document")
+            page_num = doc.metadata.get("page_number", 1)
+            content = doc.page_content.strip()
+            context_parts.append(f"--- Document: {doc_name} (Page {page_num}) ---\n{content}")
+        return "\n\n".join(context_parts)
+
+    @staticmethod
+    def extract_sources(docs: List[LCDocument]) -> List[Dict[str, Any]]:
+        """
+        Extracts structured source citations outside the LLM
+        directly from LangChain Document metadata.
+        """
+        sources = []
+        seen = set()
+        for doc in docs:
+            meta = doc.metadata
+            key = (meta.get("document_name"), meta.get("page_number"), meta.get("chunk_index"))
+            if key not in seen:
+                seen.add(key)
+                sources.append({
+                    "document_id": meta.get("document_id"),
+                    "document_name": meta.get("document_name", "Unknown Document"),
+                    "page_number": meta.get("page_number", 1),
+                    "chunk_index": meta.get("chunk_index", 0),
+                    "similarity_score": meta.get("similarity_score", 0.0),
+                    "score": meta.get("similarity_score", 0.0),
+                    "snippet": meta.get("snippet", doc.page_content[:220])
+                })
+        return sources
 
     def query(
         self,
@@ -51,16 +147,28 @@ class RAGPipeline:
         top_k: int = 4
     ) -> Dict[str, Any]:
         """
-        Executes grounded RAG search & generation for the given user and question.
+        Full LangChain RAG Execution:
+        User Question
+        ↓
+        UserScopedRetriever.invoke(question) [LangChain BaseRetriever]
+        ↓
+        List[LCDocument] [LangChain Documents with metadata]
+        ↓
+        format_documents(docs)
+        ↓
+        ChatPromptTemplate | ChatGroq (with fallbacks) | StrOutputParser [LCEL Chain]
+        ↓
+        Grounded Answer + Structured Sources
         """
         if not question or not question.strip():
             return {
                 "answer": "Please ask a question about your documents.",
                 "sources": [],
-                "model": model
+                "model": model,
+                "retrieved_documents_count": 0
             }
 
-        # Check if user has any documents/chunks indexed
+        # Check if user has documents indexed in their FAISS vector store
         user_chunk_count = self.vector_store.get_user_chunks_count(user_id)
         if user_chunk_count == 0:
             return {
@@ -70,120 +178,60 @@ class RAGPipeline:
                     "or the Document Management panel to ask questions about it."
                 ),
                 "sources": [],
-                "model": model
+                "model": model,
+                "retrieved_documents_count": 0
             }
 
-        # 1. Embed query
-        query_embedding = self.embedding_service.embed_query(question.strip())
+        # 1. Retrieve LangChain Document objects using UserScopedRetriever
+        retriever = self.get_retriever(user_id=user_id, doc_ids=doc_ids, top_k=top_k)
+        retrieved_docs: List[LCDocument] = retriever.invoke(question.strip())
 
-        # 2. Similarity search in user's FAISS index
-        retrieved_chunks = self.vector_store.similarity_search(
-            user_id=user_id,
-            query_embedding=query_embedding,
-            top_k=top_k,
-            doc_ids=doc_ids
-        )
-
-        if not retrieved_chunks:
+        if not retrieved_docs:
             return {
-                "answer": "I cannot find the answer to that in the provided documents.",
+                "answer": "I couldn't find this information in the provided documents.",
                 "sources": [],
-                "model": model
+                "model": model,
+                "retrieved_documents_count": 0
             }
 
-        # Filter out very low similarity matches (e.g. negative or near-zero cosine similarity)
-        relevant_chunks = [c for c in retrieved_chunks if c.get("score", 0) > 0.15]
-        if not relevant_chunks:
-            return {
-                "answer": "I cannot find the answer to that in the provided documents.",
-                "sources": [],
-                "model": model
-            }
+        # 2. Format context from LangChain Document objects
+        context_str = self.format_documents(retrieved_docs)
 
-        # 3. Build grounded context
-        context_parts = []
-        for i, chunk in enumerate(relevant_chunks):
-            doc_name = chunk.get("document_name", "Document")
-            page_num = chunk.get("page_number", 1)
-            content = chunk.get("content", "").strip()
-            context_parts.append(f"--- Document: {doc_name} (Page {page_num}) ---\n{content}")
+        # 3. Extract structured sources outside the LLM from Document metadata
+        sources = self.extract_sources(retrieved_docs)
 
-        context_str = "\n\n".join(context_parts)
-
-        # 4. Deduplicate source citations for UI display
-        sources = []
-        seen = set()
-        for chunk in relevant_chunks:
-            key = (chunk.get("document_name"), chunk.get("page_number"), chunk.get("chunk_index"))
-            if key not in seen:
-                seen.add(key)
-                content_snippet = chunk.get("content", "").strip()
-                if len(content_snippet) > 220:
-                    content_snippet = content_snippet[:220] + "..."
-                sources.append({
-                    "document_id": chunk.get("document_id"),
-                    "document_name": chunk.get("document_name", "Unknown Document"),
-                    "page_number": chunk.get("page_number", 1),
-                    "chunk_index": chunk.get("chunk_index", 0),
-                    "score": round(chunk.get("score", 0.0), 3),
-                    "snippet": content_snippet
-                })
-
-        # 5. LLM Generation
-        if not self.client:
+        # 4. Check for Groq API key configuration
+        if not self.api_key or self.api_key == "your_groq_api_key_here":
             return {
                 "answer": (
-                    "RAG context retrieved successfully, but GROQ_API_KEY is not configured on the server. "
+                    "RAG context retrieved successfully via LangChain, but GROQ_API_KEY is not configured on the server. "
                     "Please configure GROQ_API_KEY in backend/.env."
                 ),
                 "sources": sources,
-                "model": model
+                "model": model,
+                "retrieved_documents_count": len(retrieved_docs)
             }
 
-        prompt_messages = [
-            {"role": "system", "content": RAG_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": f"DOCUMENT CONTEXT:\n{context_str}\n\nUSER QUESTION:\n{question.strip()}\n\nGROUNDED ANSWER:"
+        # 5. Execute LangChain LCEL chain
+        try:
+            chain = self.build_llm_chain(model=model)
+            answer = chain.invoke({
+                "context": context_str,
+                "question": question.strip()
+            })
+            model_used = model
+        except Exception as e:
+            err_str = str(e)
+            return {
+                "answer": f"Error generating answer with AI: {err_str}",
+                "sources": sources,
+                "model": model,
+                "retrieved_documents_count": len(retrieved_docs)
             }
-        ]
-
-        candidate_models = [model]
-        for fb in FALLBACK_MODELS:
-            if fb not in candidate_models:
-                candidate_models.append(fb)
-
-        model_used = model
-        answer_text = None
-        last_error = None
-
-        for candidate in candidate_models:
-            try:
-                response = self.client.chat.completions.create(
-                    messages=prompt_messages,
-                    model=candidate,
-                    temperature=0.2,  # Low temperature for strict adherence to facts
-                    max_tokens=1500
-                )
-                answer_text = response.choices[0].message.content
-                model_used = candidate
-                break
-            except Exception as e:
-                err_str = str(e)
-                last_error = err_str
-                if "model_decommissioned" in err_str or "model_not_found" in err_str or "does not exist" in err_str:
-                    continue
-                return {
-                    "answer": f"Error generating answer with AI: {err_str}",
-                    "sources": sources,
-                    "model": candidate
-                }
-
-        if answer_text is None:
-            answer_text = f"Error generating answer with AI: {last_error}"
 
         return {
-            "answer": answer_text,
+            "answer": answer.strip(),
             "sources": sources,
-            "model": model_used
+            "model": model_used,
+            "retrieved_documents_count": len(retrieved_docs)
         }
