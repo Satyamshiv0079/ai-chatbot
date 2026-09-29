@@ -2,13 +2,15 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import MessageBubble from './MessageBubble';
 import {
   createSession, sendMessage, getSessions, getSessionMessages,
-  deleteSession, renameSession, getModels, isAuthenticated, getUsername, logout
+  deleteSession, renameSession, getModels, isAuthenticated, getUsername, logout,
+  uploadDocument, getDocuments, deleteDocument, sendRAGQuery
 } from '../services/chatService';
 import TextareaAutosize from 'react-textarea-autosize';
 import {
   Mic, MicOff, Send, PlusCircle, Volume2, VolumeX, Bot,
   Moon, Sun, LogOut, Menu, Trash2, ChevronDown, Cpu, X,
-  Paperclip, FileText, Download, Search, Edit2, Check
+  Paperclip, Download, Search, Edit2, Check,
+  FolderOpen, Upload, Layers, MessageSquare, Database, AlertCircle, CheckCircle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import './ChatWindow.css';
@@ -41,9 +43,19 @@ function ChatWindow() {
   const [darkMode, setDarkMode]         = useState(() => localStorage.getItem('darkMode') === 'true');
   const [username, setUsername]         = useState('User');
 
-  // Document attachment
-  const [attachment, setAttachment]     = useState(null);
+  // Mode: 'chat' (General AI) | 'rag' (Ask My Documents)
+  const [chatMode, setChatMode]         = useState('chat');
+
+  // Document Management & Knowledge Base
+  const [documents, setDocuments]       = useState([]);
+  const [isDocPanelOpen, setIsDocPanelOpen] = useState(false);
+  const [isUploading, setIsUploading]   = useState(false);
+  const [uploadFeedback, setUploadFeedback] = useState(null);
+  const [selectedDocIds, setSelectedDocIds] = useState([]);
+
+  // File upload input ref
   const fileInputRef                    = useRef(null);
+  const panelFileInputRef               = useRef(null);
 
   // Chat history sidebar & Search Filter
   const [sessions, setSessions]         = useState([]);
@@ -96,12 +108,25 @@ function ChatWindow() {
     catch {} finally { setLoadingSessions(false); }
   }, []);
 
+  // ── Load user documents ──────────────────────────────────────────────────────
+  const loadDocs = useCallback(async () => {
+    try {
+      const docs = await getDocuments();
+      setDocuments(docs || []);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated()) {
+      loadDocs();
+    }
+  }, [loadDocs]);
+
   // ── Load available models ────────────────────────────────────────────────────
   useEffect(() => {
     getModels().then(loadedModels => {
       if (Array.isArray(loadedModels) && loadedModels.length > 0) {
         setModels(loadedModels);
-        // Ensure selected model exists in loaded models
         setSelectedModel(prev => loadedModels.some(m => m.id === prev) ? prev : loadedModels[0].id);
       }
     }).catch(() =>
@@ -115,24 +140,27 @@ function ChatWindow() {
   }, []);
 
   // ── Init new session ─────────────────────────────────────────────────────────
-  const initNewSession = useCallback(async () => {
+  const initNewSession = useCallback(async (mode = chatMode) => {
     try {
       const id = await createSession();
       setSessionId(id);
       setActiveSessionId(id);
       setIsConnected(true);
+      const greeting = mode === 'rag'
+        ? `Hello, ${getUsername() || 'there'}! 📚 You are in **Ask My Documents (RAG)** mode. Ask questions and get answers grounded strictly in your indexed documents, complete with source citations!`
+        : `Hello, ${getUsername() || 'there'}! 👋 Welcome to AI Chatbot. Ask me anything, or switch to **Ask My Documents** mode to query your files!`;
+
       setMessages([{
-        id: Date.now(), sender: 'bot', isNew: false,
-        text: `Hello, ${getUsername() || 'there'}! 👋 Welcome to AI Chatbot. Ask me anything, or attach files/documents to analyze!`,
+        id: Date.now(), sender: 'bot', isNew: false, text: greeting,
       }]);
       loadSessions();
     } catch {
       setMessages([{ id: Date.now(), sender: 'bot', text: 'Could not connect. Make sure the backend is running.' }]);
     }
-  }, [loadSessions]);
+  }, [loadSessions, chatMode]);
 
   useEffect(() => {
-    if (isAuthenticated()) { initNewSession(); }
+    if (isAuthenticated()) { initNewSession(chatMode); }
   }, []); // eslint-disable-line
 
   // ── Auto-scroll ──────────────────────────────────────────────────────────────
@@ -149,20 +177,64 @@ function ChatWindow() {
     } catch {}
   };
 
-  // ── File Selection & Parsing ─────────────────────────────────────────────────
+  // ── Upload Document to Knowledge Base (RAG) ──────────────────────────────────
+  const handleUploadFile = async (file) => {
+    if (!file) return;
+    setIsUploading(true);
+    setUploadFeedback(null);
+    try {
+      const res = await uploadDocument(file);
+      setUploadFeedback({ type: 'success', message: res.message || `Indexed ${file.name}` });
+      await loadDocs();
+      // Add system announcement in chat
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now(),
+          sender: 'bot',
+          isNew: false,
+          text: `📄 **Document Indexed**: \`${file.name}\` (${res.document?.chunk_count || 0} chunks, ${res.document?.page_count || 1} pages). You can now ask questions about this document in RAG mode!`
+        }
+      ]);
+    } catch (err) {
+      const msg = err?.response?.data?.error || `Failed to index ${file.name}`;
+      setUploadFeedback({ type: 'error', message: msg });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      setAttachment({
-        name: file.name,
-        size: (file.size / 1024).toFixed(1) + ' KB',
-        content: evt.target.result
-      });
-    };
-    reader.readAsText(file);
+    if (file) {
+      handleUploadFile(file);
+    }
     e.target.value = null;
+  };
+
+  // ── Delete Document from Knowledge Base ──────────────────────────────────────
+  const handleDeleteDoc = async (docId, filename) => {
+    if (!window.confirm(`Delete "${filename}" and remove its embeddings from your knowledge base?`)) return;
+    try {
+      await deleteDocument(docId);
+      await loadDocs();
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now(),
+          sender: 'bot',
+          isNew: false,
+          text: `🗑️ Removed document \`${filename}\` from your knowledge base.`
+        }
+      ]);
+    } catch {}
+  };
+
+  // ── Toggle Document Selection Filter ─────────────────────────────────────────
+  const handleToggleDocFilter = (docId) => {
+    setSelectedDocIds(prev =>
+      prev.includes(docId) ? prev.filter(id => id !== docId) : [...prev, docId]
+    );
   };
 
   // ── Session Rename ───────────────────────────────────────────────────────────
@@ -195,18 +267,40 @@ function ChatWindow() {
   // ── Export Chat ──────────────────────────────────────────────────────────────
   const handleExportChat = () => {
     if (messages.length === 0) return;
-    const exportText = messages.map(m => `### ${m.sender === 'user' ? 'User' : 'NovaMind'}:\n${m.text}\n`).join('\n---\n\n');
+    const exportText = messages.map(m => `### ${m.sender === 'user' ? 'User' : 'AI Chatbot'}:\n${m.text}\n${m.sources ? '\n**Sources:** ' + m.sources.map(s => `[${s.document_name}, Page ${s.page_number}]`).join(', ') : ''}`).join('\n---\n\n');
     const blob = new Blob([exportText], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `NovaMind-Chat-${sessionId || 'export'}.md`;
+    a.download = `AI-Chatbot-${chatMode.toUpperCase()}-${sessionId || 'export'}.md`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   // ── New Chat ─────────────────────────────────────────────────────────────────
-  const handleNewChat = () => { setMessages([]); setSessionId(null); setInput(''); setAttachment(null); initNewSession(); };
+  const handleNewChat = () => {
+    setMessages([]);
+    setSessionId(null);
+    setInput('');
+    initNewSession(chatMode);
+  };
+
+  // ── Mode Switch ──────────────────────────────────────────────────────────────
+  const handleModeChange = (newMode) => {
+    if (newMode === chatMode) return;
+    setChatMode(newMode);
+    setMessages(prev => [
+      ...prev,
+      {
+        id: Date.now(),
+        sender: 'bot',
+        isNew: false,
+        text: newMode === 'rag'
+          ? `🔄 Switched to **Ask My Documents (RAG)** mode. Queries are now grounded strictly on your ${documents.length} uploaded document(s).`
+          : `🔄 Switched to **General AI Chat** mode. Multi-turn conversation with active Groq models.`
+      }
+    ]);
+  };
 
   // ── Logout ───────────────────────────────────────────────────────────────────
   const handleLogout = () => { logout(); navigate('/login'); };
@@ -220,41 +314,57 @@ function ChatWindow() {
     else             { recognitionRef.current?.start(); setIsListening(true); }
   };
 
-  // ── Send Message ─────────────────────────────────────────────────────────────
+  // ── Send Message (Handles Mode A: Chat & Mode B: RAG) ────────────────────────
   const handleSend = async () => {
-    if ((!input.trim() && !attachment) || isLoading) return;
+    const userText = input.trim();
+    if (!userText || isLoading) return;
 
-    let fullPrompt = input.trim();
-    if (attachment) {
-      fullPrompt = `[Attached Document: ${attachment.name}]\n\`\`\`\n${attachment.content.slice(0, 3000)}\n\`\`\`\n\n${fullPrompt || 'Please summarize or analyze this document.'}`;
-    }
-
-    const userDisplayText = attachment ? `📄 [${attachment.name}]\n${input.trim()}` : input.trim();
-    setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: userDisplayText }]);
-    
+    setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: userText }]);
     setInput('');
-    setAttachment(null);
     setIsLoading(true);
     playSendSound();
 
     try {
-      const result = await sendMessage(fullPrompt, sessionId, selectedModel);
-      const botMsg = {
-        id: Date.now() + 1, sender: 'bot', isNew: true,
-        text: result.bot_response, intent: result.intent, confidence: result.confidence,
-      };
-      setMessages(prev => prev.map(m => ({ ...m, isNew: false })).concat(botMsg));
-      playReceiveSound();
-      if (voiceEnabled) speakText(result.bot_response);
+      if (chatMode === 'rag') {
+        // Mode B: RAG Query
+        const activeDocFilter = selectedDocIds.length > 0 ? selectedDocIds : null;
+        const result = await sendRAGQuery(userText, selectedModel, activeDocFilter);
 
-      if (result.session_id && result.session_id !== sessionId) {
-        setSessionId(result.session_id);
-        setActiveSessionId(result.session_id);
+        const botMsg = {
+          id: Date.now() + 1,
+          sender: 'bot',
+          isNew: true,
+          text: result.answer,
+          sources: result.sources || [],
+          model: result.model
+        };
+        setMessages(prev => prev.map(m => ({ ...m, isNew: false })).concat(botMsg));
+        playReceiveSound();
+        if (voiceEnabled) speakText(result.answer);
+      } else {
+        // Mode A: General AI Chat
+        const result = await sendMessage(userText, sessionId, selectedModel);
+        const botMsg = {
+          id: Date.now() + 1,
+          sender: 'bot',
+          isNew: true,
+          text: result.bot_response,
+          intent: result.intent,
+          confidence: result.confidence,
+        };
+        setMessages(prev => prev.map(m => ({ ...m, isNew: false })).concat(botMsg));
+        playReceiveSound();
+        if (voiceEnabled) speakText(result.bot_response);
+
+        if (result.session_id && result.session_id !== sessionId) {
+          setSessionId(result.session_id);
+          setActiveSessionId(result.session_id);
+        }
+        loadSessions();
       }
-      loadSessions();
     } catch (err) {
       if (err?.response?.status === 401) { logout(); navigate('/login'); return; }
-      setMessages(prev => [...prev, { id: Date.now()+1, sender: 'bot', text: 'Something went wrong. Please try again.' }]);
+      setMessages(prev => [...prev, { id: Date.now()+1, sender: 'bot', text: 'Something went wrong. Please check your connection and try again.' }]);
     } finally {
       setIsLoading(false);
     }
@@ -291,6 +401,15 @@ function ChatWindow() {
         <div className="sidebar-content">
           <button className="new-chat-btn" onClick={handleNewChat}>
             <PlusCircle size={15} /> New Chat
+          </button>
+
+          {/* Quick Access to Documents */}
+          <button
+            className={`doc-panel-toggle-btn ${isDocPanelOpen ? 'active' : ''}`}
+            onClick={() => setIsDocPanelOpen(o => !o)}
+          >
+            <FolderOpen size={15} />
+            <span>Knowledge Base ({documents.length})</span>
           </button>
 
           {/* Search Filter */}
@@ -384,7 +503,40 @@ function ChatWindow() {
             </div>
           </div>
 
+          {/* Mode Switcher Tabs */}
+          <div className="mode-switcher-container">
+            <button
+              className={`mode-tab ${chatMode === 'chat' ? 'active' : ''}`}
+              onClick={() => handleModeChange('chat')}
+              title="General AI Conversational Chat"
+            >
+              <MessageSquare size={14} />
+              <span>General AI</span>
+            </button>
+            <button
+              className={`mode-tab ${chatMode === 'rag' ? 'active' : ''}`}
+              onClick={() => handleModeChange('rag')}
+              title="Ask My Documents: Grounded Q&A with Vector Search"
+            >
+              <Database size={14} />
+              <span>Ask My Documents (RAG)</span>
+              {documents.length > 0 && (
+                <span className="mode-doc-count">{documents.length}</span>
+              )}
+            </button>
+          </div>
+
           <div className="header-actions">
+            {/* Knowledge Base Drawer Button */}
+            <button
+              className={`action-btn ${isDocPanelOpen ? 'active' : ''}`}
+              onClick={() => setIsDocPanelOpen(o => !o)}
+              title="Manage Documents & Knowledge Base"
+            >
+              <Layers size={15} />
+              <span className="btn-text">Documents ({documents.length})</span>
+            </button>
+
             {/* Model Switcher */}
             <div className="model-switcher-wrapper">
               <button className="model-switcher-btn" onClick={() => setShowModelMenu(o => !o)}>
@@ -432,6 +584,104 @@ function ChatWindow() {
           </div>
         </header>
 
+        {/* ── Document Management Drawer ─────────────────────────────────── */}
+        {isDocPanelOpen && (
+          <div className="doc-panel-overlay" onClick={() => setIsDocPanelOpen(false)}>
+            <div className="doc-panel-content glass-effect" onClick={e => e.stopPropagation()}>
+              <div className="doc-panel-header">
+                <div className="doc-panel-title">
+                  <FolderOpen size={18} />
+                  <h3>Knowledge Base Documents</h3>
+                </div>
+                <button className="icon-action-btn" onClick={() => setIsDocPanelOpen(false)}>
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="doc-upload-box">
+                <input
+                  type="file"
+                  ref={panelFileInputRef}
+                  onChange={handleFileSelect}
+                  style={{ display: 'none' }}
+                  accept=".pdf,.docx,.doc,.txt,.md,.csv,.json"
+                />
+                <button
+                  className="upload-dropzone-btn"
+                  onClick={() => panelFileInputRef.current?.click()}
+                  disabled={isUploading}
+                >
+                  <Upload size={20} />
+                  <span>{isUploading ? 'Chunking & Embedding...' : 'Click to Upload PDF, DOCX, or TXT'}</span>
+                  <small>Files are automatically chunked & indexed into your isolated vector store</small>
+                </button>
+              </div>
+
+              {uploadFeedback && (
+                <div className={`upload-alert ${uploadFeedback.type}`}>
+                  {uploadFeedback.type === 'success' ? <CheckCircle size={15} /> : <AlertCircle size={15} />}
+                  <span>{uploadFeedback.message}</span>
+                </div>
+              )}
+
+              <div className="doc-list-section">
+                <div className="doc-list-header">
+                  <span>Uploaded Documents ({documents.length})</span>
+                  {selectedDocIds.length > 0 && (
+                    <button
+                      className="clear-filter-btn"
+                      onClick={() => setSelectedDocIds([])}
+                    >
+                      Clear Selection ({selectedDocIds.length})
+                    </button>
+                  )}
+                </div>
+
+                {documents.length === 0 ? (
+                  <div className="empty-docs-state">
+                    <p>No documents uploaded yet.</p>
+                    <small>Upload PDF, DOCX, or TXT documents to enable grounded RAG answering.</small>
+                  </div>
+                ) : (
+                  <div className="doc-items-list">
+                    {documents.map(doc => {
+                      const isFiltered = selectedDocIds.includes(doc.id);
+                      return (
+                        <div key={doc.id} className={`doc-item-row ${isFiltered ? 'selected' : ''}`}>
+                          <label className="doc-checkbox-wrapper" title="Filter queries to this document">
+                            <input
+                              type="checkbox"
+                              checked={isFiltered}
+                              onChange={() => handleToggleDocFilter(doc.id)}
+                            />
+                          </label>
+                          <div className="doc-info">
+                            <span className="doc-name" title={doc.filename}>{doc.filename}</span>
+                            <div className="doc-submeta">
+                              <span>{(doc.file_size / 1024).toFixed(1)} KB</span>
+                              <span>·</span>
+                              <span>{doc.chunk_count} chunks</span>
+                              <span>·</span>
+                              <span>{doc.page_count} page(s)</span>
+                            </div>
+                          </div>
+                          <button
+                            className="doc-delete-btn"
+                            onClick={() => handleDeleteDoc(doc.id, doc.filename)}
+                            title="Delete document and remove embeddings"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Messages */}
         <main className="chat-main">
           <div className="messages-container">
@@ -444,6 +694,9 @@ function ChatWindow() {
                   <div className="typing-indicator">
                     <span /><span /><span />
                   </div>
+                  <small style={{ display: 'block', marginTop: '6px', fontSize: '0.75rem', opacity: 0.7 }}>
+                    {chatMode === 'rag' ? 'Retrieving vector context & generating grounded answer...' : 'Thinking...'}
+                  </small>
                 </div>
               </div>
             )}
@@ -453,33 +706,22 @@ function ChatWindow() {
 
         {/* Input Footer */}
         <footer className="chat-footer glass-effect">
-          {/* Attachment Preview Badge */}
-          {attachment && (
-            <div className="attachment-badge">
-              <FileText size={14} />
-              <span className="badge-name">{attachment.name}</span>
-              <span className="badge-size">({attachment.size})</span>
-              <button className="remove-attachment" onClick={() => setAttachment(null)}>
-                <X size={13} />
-              </button>
-            </div>
-          )}
-
           <div className="input-container">
-            {/* Attachment Pin */}
+            {/* Direct Upload / Pin */}
             <input
               type="file"
               ref={fileInputRef}
               onChange={handleFileSelect}
               style={{ display: 'none' }}
-              accept=".txt,.pdf,.md,.json,.csv,.js,.py,.html,.css"
+              accept=".pdf,.docx,.doc,.txt,.md,.csv,.json"
             />
             <button
-              className="attach-btn"
+              className={`attach-btn ${isUploading ? 'uploading' : ''}`}
               onClick={() => fileInputRef.current?.click()}
-              title="Attach File/Document"
+              title="Upload & Index Document (PDF, DOCX, TXT)"
+              disabled={isUploading}
             >
-              <Paperclip size={18} />
+              {isUploading ? <Upload size={18} className="spin" /> : <Paperclip size={18} />}
             </button>
 
             {/* Mic Speech Button */}
@@ -493,19 +735,27 @@ function ChatWindow() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={attachment ? "Ask a question about this document…" : "Ask me anything… (Shift+Enter for new line)"}
+              placeholder={
+                chatMode === 'rag'
+                  ? selectedDocIds.length > 0
+                    ? `Ask about ${selectedDocIds.length} selected document(s)…`
+                    : documents.length > 0
+                      ? `Ask questions across your ${documents.length} document(s)…`
+                      : "Upload a document first, then ask questions about it…"
+                  : "Ask me anything… (Shift+Enter for new line)"
+              }
             />
 
             <button
-              className={`send-btn ${(input.trim() || attachment) ? 'active' : ''}`}
+              className={`send-btn ${input.trim() ? 'active' : ''}`}
               onClick={handleSend}
-              disabled={isLoading || (!input.trim() && !attachment)}
+              disabled={isLoading || !input.trim()}
             >
               <Send size={18} />
             </button>
           </div>
           <p className="footer-disclaimer">
-            Using <strong>{currentModelName}</strong> · NovaMind PWA ready · Verify important info.
+            Mode: <strong>{chatMode === 'rag' ? 'Ask My Documents (RAG)' : 'General AI Chat'}</strong> · Using <strong>{currentModelName}</strong> · Production RAG with FAISS & Groq.
           </p>
         </footer>
       </div>
@@ -513,4 +763,4 @@ function ChatWindow() {
   );
 }
 
-export default ChatWindow;
+export default ChatWindow;

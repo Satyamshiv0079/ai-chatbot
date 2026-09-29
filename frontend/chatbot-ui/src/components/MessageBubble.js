@@ -2,12 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Copy, Check, User, Bot } from 'lucide-react';
+import { Copy, Check, User, Bot, FileText, ChevronDown, ChevronUp } from 'lucide-react';
 import './ChatWindow.css';
 
 function MessageBubble({ message }) {
   const isBot = message.sender === 'bot';
   const [copied, setCopied] = useState(false);
+  const [showSources, setShowSources] = useState(false);
   const bubbleRef = useRef(null);
 
   const handleCopy = (text) => {
@@ -53,6 +54,8 @@ function MessageBubble({ message }) {
       bubbleRef.current.style.transform = 'perspective(800px) rotateX(0deg) rotateY(0deg) translateZ(0px)';
     }
   };
+
+  const hasSources = isBot && Array.isArray(message.sources) && message.sources.length > 0;
 
   return (
     <div className={`message-wrapper ${isBot ? 'bot-wrapper' : 'user-wrapper'} spatial-entry`}>
@@ -101,6 +104,47 @@ function MessageBubble({ message }) {
             >
               {displayedText}
             </ReactMarkdown>
+
+            {/* RAG Sources Cited Badge & Accordion */}
+            {hasSources && (
+              <div className="sources-container">
+                <button
+                  className="sources-toggle-btn"
+                  onClick={() => setShowSources(prev => !prev)}
+                >
+                  <FileText size={13} className="sources-icon" />
+                  <span>Sources Cited ({message.sources.length})</span>
+                  {showSources ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                </button>
+
+                {showSources && (
+                  <div className="sources-list-dropdown fade-in">
+                    {message.sources.map((src, i) => (
+                      <div key={i} className="source-card">
+                        <div className="source-header">
+                          <span className="source-doc-name" title={src.document_name}>
+                            <FileText size={12} /> {src.document_name}
+                          </span>
+                          <div className="source-badges">
+                            {src.page_number && (
+                              <span className="source-page-badge">Page {src.page_number}</span>
+                            )}
+                            {src.score !== undefined && (
+                              <span className="source-score-badge">
+                                {Math.round(src.score * 100)}% match
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {src.snippet && (
+                          <p className="source-snippet">"{src.snippet}"</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="message-actions">
               <button className="icon-action-btn" onClick={() => handleCopy(message.text)} title="Copy">

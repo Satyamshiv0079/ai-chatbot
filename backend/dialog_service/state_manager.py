@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, text as sqlalchemy_text
 from sqlalchemy.orm import sessionmaker, scoped_session
 
 # We must import models so Base knows about them
-from models import Base, UserSession, ConversationHistory, ChatbotResponse, SentimentInfo
+from models import Base, UserSession, ConversationHistory, ChatbotResponse, SentimentInfo, Document, DocumentChunk
 
 # ── Database URL ──────────────────────────────────────────────────────────────
 SQLITE_FALLBACK = f"sqlite:///{os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'chatbot_orm.db')}"

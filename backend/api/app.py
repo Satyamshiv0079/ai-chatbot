@@ -6,9 +6,13 @@ import sys, os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+from werkzeug.utils import secure_filename
 from nlp_service.predictor import NLPPredictor
 from dialog_service.dialog_manager import DialogManager
-from dialog_service.models import UserSession, ConversationHistory, ChatbotResponse, User
+from dialog_service.models import (
+    UserSession, ConversationHistory, ChatbotResponse, User,
+    Document, DocumentChunk
+)
 from auth.auth_routes import auth_bp
 from dotenv import load_dotenv
 
@@ -27,6 +31,31 @@ app.register_blueprint(auth_bp)
 nlp = NLPPredictor(model_path=os.path.join(os.path.dirname(__file__), '..', 'nlp_service', 'model'))
 dialog = DialogManager()
 
+# ── Uploads & RAG Configuration ───────────────────────────────────────────────
+UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', os.path.join(os.path.dirname(__file__), '..', 'uploads'))
+ALLOWED_EXTENSIONS = {'pdf', 'docx', 'doc', 'txt', 'md', 'csv', 'json', 'py', 'js', 'html'}
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB max
+
+def _allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+_rag_pipeline = None
+_doc_processor = None
+_vector_store = None
+
+def _get_rag_components():
+    global _rag_pipeline, _doc_processor, _vector_store
+    if _rag_pipeline is None:
+        from rag_service.document_processor import DocumentProcessor
+        from rag_service.vector_store import FAISSUserStore
+        from rag_service.rag_chain import RAGPipeline
+        _vector_store = FAISSUserStore()
+        _doc_processor = DocumentProcessor(chunk_size=800, chunk_overlap=120)
+        _rag_pipeline = RAGPipeline(vector_store=_vector_store)
+    return _rag_pipeline, _doc_processor, _vector_store
+
 
 # ── Public ────────────────────────────────────────────────────────────────────
 @app.route('/')
@@ -43,7 +72,7 @@ def health():
 @jwt_required()
 def new_session():
     username = get_jwt_identity()
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     title = data.get('title', 'New Chat')
     # Create session linked to this user
     session_id = dialog.state.create_session(user_id=username)
@@ -216,9 +245,9 @@ def list_models():
 @jwt_required()
 def chat():
     username = get_jwt_identity()
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
 
-    if not data or 'message' not in data:
+    if 'message' not in data:
         return jsonify({"error": "No message provided"}), 400
 
     user_message = data['message']
@@ -260,8 +289,190 @@ def chat():
         "user_message": user_message,
         "bot_response": dialog_result["response"],
         "intent": intent,
+        "entities": entities,
         "confidence": nlp_result["confidence"],
         "model": model,
+    })
+
+
+# ── RAG & Document Management ─────────────────────────────────────────────────
+@app.route('/api/documents/upload', methods=['POST'])
+@jwt_required()
+def upload_document():
+    """
+    Accepts multipart file upload (PDF, DOCX, TXT, MD, etc.),
+    extracts text, generates chunks and embeddings, saves to user's FAISS index,
+    and records metadata in the database.
+    """
+    username = get_jwt_identity()
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part in request"}), 400
+
+    file = request.files['file']
+    if not file or file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+
+    if not _allowed_file(file.filename):
+        allowed_list = ", ".join(ALLOWED_EXTENSIONS)
+        return jsonify({"error": f"Unsupported file type. Allowed: {allowed_list}"}), 400
+
+    filename = secure_filename(file.filename)
+    if not filename:
+        filename = "uploaded_document"
+
+    user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], username)
+    os.makedirs(user_upload_dir, exist_ok=True)
+    file_path = os.path.join(user_upload_dir, filename)
+
+    # Save to disk
+    file.save(file_path)
+    file_size = os.path.getsize(file_path)
+    ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else 'txt'
+
+    db = dialog.state.Session()
+    try:
+        doc = Document(
+            user_id=username,
+            filename=filename,
+            file_type=ext,
+            file_size=file_size,
+            status="processing"
+        )
+        db.add(doc)
+        db.commit()
+        db.refresh(doc)
+
+        rag_pipe, doc_proc, vec_store = _get_rag_components()
+        from rag_service.embedding_service import get_embedding_service
+        embed_svc = get_embedding_service()
+
+        chunks, total_pages = doc_proc.process_file(
+            file_path=file_path,
+            filename=filename,
+            document_id=doc.id,
+            user_id=username
+        )
+
+        if chunks:
+            texts = [c["content"] for c in chunks]
+            embeddings = embed_svc.embed_texts(texts)
+            vec_store.add_chunks(user_id=username, new_chunks=chunks, embeddings=embeddings)
+
+            # Persist chunks to DB
+            for c in chunks:
+                db_chunk = DocumentChunk(
+                    document_id=doc.id,
+                    user_id=username,
+                    chunk_index=c["chunk_index"],
+                    page_number=c["page_number"],
+                    content=c["content"],
+                    metadata_json=str(c.get("metadata", {}))
+                )
+                db.add(db_chunk)
+
+            doc.chunk_count = len(chunks)
+            doc.page_count = total_pages
+            doc.status = "ready"
+        else:
+            doc.chunk_count = 0
+            doc.page_count = total_pages
+            doc.status = "empty"
+
+        db.commit()
+        return jsonify({
+            "message": f"Successfully indexed '{filename}' ({len(chunks)} chunks, {total_pages} page(s))",
+            "document": doc.to_dict()
+        }), 201
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": f"Failed to process document: {str(e)}"}), 500
+    finally:
+        db.close()
+
+
+@app.route('/api/documents', methods=['GET'])
+@jwt_required()
+def list_documents():
+    """Returns all documents uploaded and indexed by the authenticated user."""
+    username = get_jwt_identity()
+    db = dialog.state.Session()
+    try:
+        docs = (
+            db.query(Document)
+            .filter_by(user_id=username)
+            .order_by(Document.created_at.desc())
+            .all()
+        )
+        return jsonify({"documents": [d.to_dict() for d in docs]})
+    finally:
+        db.close()
+
+
+@app.route('/api/documents/<int:doc_id>', methods=['DELETE'])
+@jwt_required()
+def delete_document(doc_id):
+    """
+    Deletes a document by ID: removes from FAISS vector store,
+    deletes file from disk, and removes DB records.
+    """
+    username = get_jwt_identity()
+    db = dialog.state.Session()
+    try:
+        doc = db.query(Document).filter_by(id=doc_id, user_id=username).first()
+        if not doc:
+            return jsonify({"error": "Document not found"}), 404
+
+        filename = doc.filename
+        _, _, vec_store = _get_rag_components()
+        from rag_service.embedding_service import get_embedding_service
+        vec_store.delete_document(user_id=username, doc_id=doc_id, embedding_service=get_embedding_service())
+
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], username, filename)
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+
+        db.delete(doc)
+        db.commit()
+        return jsonify({"message": f"Document '{filename}' deleted successfully"})
+    finally:
+        db.close()
+
+
+@app.route('/api/rag/query', methods=['POST'])
+@jwt_required()
+def rag_query():
+    """
+    Mode B (RAG / Ask My Documents):
+    Performs similarity search over user's documents in FAISS, constructs a grounded prompt,
+    invokes Groq LLM with fallback resilience, and returns answer + source citations.
+    """
+    username = get_jwt_identity()
+    data = request.get_json() or {}
+    query_text = data.get('query', '').strip()
+    if not query_text:
+        return jsonify({"error": "Query is required"}), 400
+
+    model = data.get('model', DEFAULT_MODEL)
+    doc_ids = data.get('doc_ids', None)
+    top_k = int(data.get('top_k', 4))
+
+    rag_pipe, _, _ = _get_rag_components()
+    result = rag_pipe.query(
+        user_id=username,
+        question=query_text,
+        model=model,
+        doc_ids=doc_ids,
+        top_k=top_k
+    )
+
+    return jsonify({
+        "query": query_text,
+        "answer": result["answer"],
+        "sources": result["sources"],
+        "model": result["model"]
     })
 
 

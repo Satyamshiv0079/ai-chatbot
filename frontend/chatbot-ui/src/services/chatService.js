@@ -62,11 +62,45 @@ export const getModels = async () => {
   return res.data.models;
 };
 
-// ── Chat API ──────────────────────────────────────────────────────────────────
+// ── Chat API (Mode A: General AI) ─────────────────────────────────────────────
 export const sendMessage = async (message, sessionId, model = 'openai/gpt-oss-20b') => {
   const res = await axios.post(
     `${API_URL}/chat`,
     { message, session_id: sessionId, model },
+    authHeaders()
+  );
+  return res.data;
+};
+
+// ── RAG Document & Query API (Mode B: Ask My Documents) ──────────────────────
+export const uploadDocument = async (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const token = getToken();
+  const res = await axios.post(`${API_URL}/api/documents/upload`, formData, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'multipart/form-data',
+    },
+    timeout: 60000,
+  });
+  return res.data;
+};
+
+export const getDocuments = async () => {
+  const res = await axios.get(`${API_URL}/api/documents`, authHeaders());
+  return res.data.documents;
+};
+
+export const deleteDocument = async (docId) => {
+  const res = await axios.delete(`${API_URL}/api/documents/${docId}`, authHeaders());
+  return res.data;
+};
+
+export const sendRAGQuery = async (query, model = 'openai/gpt-oss-20b', docIds = null, topK = 4) => {
+  const res = await axios.post(
+    `${API_URL}/api/rag/query`,
+    { query, model, doc_ids: docIds, top_k: topK },
     authHeaders()
   );
   return res.data;

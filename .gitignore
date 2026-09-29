@@ -22,4 +22,9 @@ backend/test_g4f.py
 backend/test_chat.py
 
 # Frontend build artifacts
-frontend/chatbot-ui/build/
+frontend/chatbot-ui/build/
+
+# Local RAG & vector stores
+backend/uploads/
+backend/vector_stores/
+backend/tests/temp_test_vector_stores/

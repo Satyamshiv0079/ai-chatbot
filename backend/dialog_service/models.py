@@ -79,3 +79,59 @@ class SentimentInfo(Base):
 
     # Relationships
     history = relationship("ConversationHistory", back_populates="sentiment")
+
+
+class Document(Base):
+    """Uploaded document for RAG indexing with per-user isolation."""
+    __tablename__ = 'documents'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(80), nullable=False, index=True)
+    filename = Column(String(255), nullable=False)
+    file_type = Column(String(20), nullable=False)  # pdf, docx, txt, etc.
+    file_size = Column(Integer, default=0)          # in bytes
+    chunk_count = Column(Integer, default=0)
+    page_count = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    status = Column(String(50), default="ready")    # processing, ready, error
+
+    # Relationships
+    chunks = relationship("DocumentChunk", back_populates="document", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'filename': self.filename,
+            'file_type': self.file_type,
+            'file_size': self.file_size,
+            'chunk_count': self.chunk_count,
+            'page_count': self.page_count,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'status': self.status
+        }
+
+
+class DocumentChunk(Base):
+    """Text chunks extracted from documents, embedded and stored in FAISS."""
+    __tablename__ = 'document_chunks'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    document_id = Column(Integer, ForeignKey('documents.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = Column(String(80), nullable=False, index=True)
+    chunk_index = Column(Integer, nullable=False)
+    page_number = Column(Integer, default=1)
+    content = Column(Text, nullable=False)
+    metadata_json = Column(Text, nullable=True)
+
+    # Relationships
+    document = relationship("Document", back_populates="chunks")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'document_id': self.document_id,
+            'user_id': self.user_id,
+            'chunk_index': self.chunk_index,
+            'page_number': self.page_number,
+            'content': self.content,
+            'metadata_json': self.metadata_json
+        }
