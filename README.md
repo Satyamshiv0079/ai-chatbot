@@ -1,11 +1,19 @@
-# 🔮 NovaMind AI — Next-Gen Spatial AI Platform
+# AI Chatbot
 
-NovaMind is an immersive, feature-packed AI assistant platform built with Flask, React, Supabase PostgreSQL, and Groq's LLM API. It features real user authentication, persistent chat history, multi-model selection, document analysis (RAG), voice mode, chat export, and PWA offline support wrapped in a stunning spatial 3D UI.
+A conversational AI assistant platform that enables multi-turn chats, document Q&A via context injection, multi-model selection with real-time fallbacks, and persistent session memory.
 
 🌐 **Live Production App**: [https://ai-chatbot-6njs1ys87-satyamshiv0079s-projects.vercel.app](https://ai-chatbot-6njs1ys87-satyamshiv0079s-projects.vercel.app)  
 ⚡ **Backend API**: [https://ai-chatbot-w1x8.onrender.com](https://ai-chatbot-w1x8.onrender.com)
 
 > Built by **Satyam**.
+
+---
+
+## 📸 Screenshots
+
+| Conversational Interface | Multi-Model Selection & Status | Cloud API & Session Architecture |
+|:---:|:---:|:---:|
+| ![Conversational Interface](docs/screenshots/chat-interface.png) | ![Multi-Model Selection](docs/screenshots/model-selection.png) | ![API Architecture](docs/screenshots/api-architecture.png) |
 
 ---
 
@@ -16,19 +24,19 @@ NovaMind is an immersive, feature-packed AI assistant platform built with Flask,
 | **Frontend** | Vercel | React.js, Glassmorphism 3D CSS, Web Speech API |
 | **Backend** | Render | Python 3.11 / Flask, Gunicorn |
 | **Database** | Supabase | Cloud PostgreSQL |
-| **AI Models** | Groq API | Llama 3.3 70B, Llama 3.1 8B, Mixtral 8x7B, Gemma 2 9B |
+| **AI Models** | Groq API | GPT OSS 20B (Fast), GPT OSS 120B, Qwen 3.8 27B, Groq Compound Mini |
 | **PWA** | Web Standard | Service Worker (`sw.js`), Web App Manifest |
 
 ---
 
 ## ✨ Features & Capability Overview
 
-- 🔮 **NovaMind Spatial 3D UI**: Perspective 3D cursor tilt, frosted glass cards, dynamic background floating orbs, and light/dark theme toggle.
-- 📄 **Document & File Analysis (RAG Context)**: Attach `.pdf`, `.txt`, `.md`, `.json`, `.csv`, `.py`, `.js` files to analyze or summarize document content.
+- 🔮 **Spatial 3D UI**: Perspective 3D cursor tilt, frosted glass cards, dynamic background floating orbs, and light/dark theme toggle.
+- 📄 **document Q&A via context injection**: Attach `.pdf`, `.txt`, `.md`, `.json`, `.csv`, `.py`, `.js` files to analyze or summarize document content.
 - 🎙️ **Full Voice Mode (STT & TTS)**:
   - **Speech-to-Text**: Hands-free voice input via Web Speech Recognition.
   - **Text-to-Speech**: Speech synthesis playback of AI responses.
-- 🎛️ **Multi-Model Intelligence**: Instant mid-chat switching between 4 cutting-edge LLMs (`llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `mixtral-8x7b-32768`, `gemma2-9b-it`).
+- 🎛️ **Multi-Model Intelligence**: Instant mid-chat switching between active production LLMs (`openai/gpt-oss-20b`, `openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, `groq/compound-mini`) with automatic fallback routing.
 - 🔐 **JWT Authentication**: Full user signup & login with bcrypt password hashing and token persistence.
 - 💾 **Persistent Chat History & Session Search**: Saved on Supabase cloud PostgreSQL. Includes instant title search filter and inline double-click session renaming.
 - 📥 **Export Chat History**: Export full chat conversations instantly as Markdown (`.md`).
@@ -46,11 +54,13 @@ ai-chatbot/
 │   ├── auth/
 │   │   └── auth_routes.py      # Auth logic (Register, Login, JWT)
 │   ├── dialog_service/
-│   │   ├── dialog_manager.py   # Groq LLM integration
+│   │   ├── dialog_manager.py   # Groq LLM integration with model fallbacks
 │   │   ├── state_manager.py    # Supabase PostgreSQL session history
 │   │   └── models.py           # SQLAlchemy database schema
 │   ├── Procfile                # Production command for Render
 │   └── requirements.txt        # Production Python dependencies
+├── docs/
+│   └── screenshots/            # App screenshots
 └── frontend/
     └── chatbot-ui/
         ├── public/
@@ -58,7 +68,7 @@ ai-chatbot/
         │   └── sw.js           # PWA service worker
         └── src/
             ├── components/
-            │   ├── ChatWindow.js   # Main NovaMind workspace
+            │   ├── ChatWindow.js   # Main workspace
             │   ├── MessageBubble.js# 3D spatial cards & Markdown rendering
             │   ├── Login.js        # Login UI
             │   └── Signup.js       # Registration UI
@@ -128,9 +138,9 @@ npm start
 - [x] JWT Authentication & bcrypt security
 - [x] Spatial 3D UI & glassmorphism design system
 - [x] Persistent cloud database history (Supabase PostgreSQL)
-- [x] Multi-model selector (Llama 3.3 70B, Llama 3.1 8B, Mixtral, Gemma 2)
+- [x] Multi-model selector (GPT OSS 20B, GPT OSS 120B, Qwen 3.8 27B, Groq Compound Mini)
 - [x] Responsive overlay drawer for mobile & tablet
-- [x] Document & PDF file attachment analysis
+- [x] document Q&A via context injection
 - [x] Hands-free Speech-to-Text & Text-to-Speech Voice Mode
 - [x] Sidebar chat search filter & inline title rename
 - [x] Conversation Markdown export (`.md`)
@@ -141,5 +151,4 @@ npm start
 
 ## 📜 License
 
-MIT — feel free to fork, adapt, and build upon NovaMind!
-
+MIT — feel free to fork, adapt, and build upon AI Chatbot!

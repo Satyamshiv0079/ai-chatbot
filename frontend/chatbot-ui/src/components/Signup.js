@@ -56,7 +56,7 @@ function Signup() {
             <Bot size={32} />
           </div>
           <h2>Create an Account</h2>
-          <p>Join NovaMind to experience next-gen AI assistance</p>
+          <p>Join AI Chatbot to experience next-gen AI assistance</p>
         </div> 
 
         {error && (

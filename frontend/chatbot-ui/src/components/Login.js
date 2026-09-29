@@ -46,7 +46,7 @@ function Login() {
           <div className="auth-logo">
             <Bot size={32} />
           </div>
-          <h2>Welcome back to NovaMind</h2>
+          <h2>Welcome back to AI Chatbot</h2>
           <p>Sign in to your account to continue</p>
         </div>
         {error && (

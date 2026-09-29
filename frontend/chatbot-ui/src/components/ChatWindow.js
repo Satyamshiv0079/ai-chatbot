@@ -57,7 +57,7 @@ function ChatWindow() {
 
   // Model switcher
   const [models, setModels]             = useState([]);
-  const [selectedModel, setSelectedModel] = useState('llama-3.1-8b-instant');
+  const [selectedModel, setSelectedModel] = useState('openai/gpt-oss-20b');
   const [showModelMenu, setShowModelMenu] = useState(false);
 
   const bottomRef      = useRef(null);
@@ -98,12 +98,18 @@ function ChatWindow() {
 
   // ── Load available models ────────────────────────────────────────────────────
   useEffect(() => {
-    getModels().then(setModels).catch(() =>
+    getModels().then(loadedModels => {
+      if (Array.isArray(loadedModels) && loadedModels.length > 0) {
+        setModels(loadedModels);
+        // Ensure selected model exists in loaded models
+        setSelectedModel(prev => loadedModels.some(m => m.id === prev) ? prev : loadedModels[0].id);
+      }
+    }).catch(() =>
       setModels([
-        { id: 'llama-3.3-70b-versatile',                        name: 'Llama 3.3 70B' },
-        { id: 'llama-3.1-8b-instant',                           name: 'Llama 3.1 8B (Fast)' },
-        { id: 'meta-llama/llama-4-scout-17b-16e-instruct',      name: 'Llama 4 Scout 17B' },
-        { id: 'meta-llama/llama-4-maverick-17b-128e-instruct',  name: 'Llama 4 Maverick 17B' },
+        { id: 'openai/gpt-oss-20b',   name: 'GPT OSS 20B (Fast)' },
+        { id: 'openai/gpt-oss-120b',  name: 'GPT OSS 120B' },
+        { id: 'qwen/qwen3.8-27b',     name: 'Qwen 3.8 27B' },
+        { id: 'groq/compound-mini',   name: 'Groq Compound Mini' },
       ])
     );
   }, []);
@@ -117,7 +123,7 @@ function ChatWindow() {
       setIsConnected(true);
       setMessages([{
         id: Date.now(), sender: 'bot', isNew: false,
-        text: `Hello, ${getUsername() || 'there'}! 👋 Welcome to NovaMind. Ask me anything, or attach files/documents to analyze!`,
+        text: `Hello, ${getUsername() || 'there'}! 👋 Welcome to AI Chatbot. Ask me anything, or attach files/documents to analyze!`,
       }]);
       loadSessions();
     } catch {
@@ -258,7 +264,7 @@ function ChatWindow() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
-  const currentModelName = models.find(m => m.id === selectedModel)?.name || 'Llama 3.3 70B';
+  const currentModelName = models.find(m => m.id === selectedModel)?.name || 'GPT OSS 20B (Fast)';
   const filteredSessions = sessions.filter(s => (s.title || '').toLowerCase().includes(searchQuery.toLowerCase()));
 
   return (
@@ -278,7 +284,7 @@ function ChatWindow() {
         <div className="sidebar-header">
           <div className="sidebar-logo">
             <Bot size={20} />
-            <span>NovaMind</span>
+            <span>AI Chatbot</span>
           </div>
         </div>
 
@@ -370,7 +376,7 @@ function ChatWindow() {
               <Menu size={20} />
             </button>
             <div className="brand-text">
-              <h2>NovaMind</h2>
+              <h2>AI Chatbot</h2>
               <p className="status-indicator">
                 <span className={`status-dot ${isConnected ? 'online' : 'offline'}`} />
                 {isConnected ? 'Connected' : 'Connecting…'}

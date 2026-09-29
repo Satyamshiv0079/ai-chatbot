@@ -154,18 +154,15 @@ def delete_session(session_id):
 
 
 # ── Chat (with model switcher) ────────────────────────────────────────────────
-# Friendly display names — CONFIRMED FREE models on Groq free tier
+# Friendly display names — ACTIVE models on Groq
 MODEL_NAMES = {
-    "llama-3.3-70b-versatile":                       "Llama 3.3 70B",
-    "llama-3.1-8b-instant":                          "Llama 3.1 8B (Fast)",
-    "meta-llama/llama-4-scout-17b-16e-instruct":     "Llama 4 Scout 17B",
-    "meta-llama/llama-4-maverick-17b-128e-instruct": "Llama 4 Maverick 17B",
+    "openai/gpt-oss-20b":       "GPT OSS 20B (Fast)",
+    "openai/gpt-oss-120b":      "GPT OSS 120B",
+    "qwen/qwen3.8-27b":         "Qwen 3.8 27B",
+    "groq/compound-mini":       "Groq Compound Mini",
 }
 
-DEFAULT_MODEL = "llama-3.1-8b-instant"
-
-# Only show free models in the UI (filter out paid/audio/embed models)
-FREE_MODEL_IDS = set(MODEL_NAMES.keys())
+DEFAULT_MODEL = "openai/gpt-oss-20b"
 
 # Cache so we don't hit Groq on every request
 _models_cache = None
@@ -179,28 +176,35 @@ def _fetch_groq_models():
         import urllib.request, json as _json
         req = urllib.request.Request(
             "https://api.groq.com/openai/v1/models",
-            headers={"Authorization": f"Bearer {os.environ.get('GROQ_API_KEY', '')}"},
+            headers={
+                "Authorization": f"Bearer {os.environ.get('GROQ_API_KEY', '')}",
+                "User-Agent": "ai-chatbot/1.0"
+            },
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = _json.loads(resp.read())
-        # Filter to chat models only (exclude audio/embed)
-        chat_ids = [
-            m["id"] for m in data.get("data", [])
-            if "whisper" not in m["id"] and "embed" not in m["id"]
-        ]
-        # Only show confirmed free models
-        _models_cache = [
+
+        returned_ids = {m["id"] for m in data.get("data", [])}
+        # Only show models present in both live list and active mappings
+        active_list = [
             {"id": mid, "name": MODEL_NAMES[mid]}
             for mid in MODEL_NAMES
-            if mid in {m["id"] for m in data.get("data", [])}
+            if mid in returned_ids
         ]
-        return _models_cache
+        if active_list:
+            _models_cache = active_list
+            return _models_cache
     except Exception:
-        # Fallback to known-good models
-        return [
-            {"id": "llama-3.1-8b-instant",  "name": "Llama 3.1 8B (Fast)"},
-            {"id": "gemma2-9b-it",           "name": "Gemma 2 9B"},
-        ]
+        pass
+
+    # Fallback to active production models
+    _models_cache = [
+        {"id": "openai/gpt-oss-20b",   "name": "GPT OSS 20B (Fast)"},
+        {"id": "openai/gpt-oss-120b",  "name": "GPT OSS 120B"},
+        {"id": "qwen/qwen3.8-27b",     "name": "Qwen 3.8 27B"},
+        {"id": "groq/compound-mini",   "name": "Groq Compound Mini"},
+    ]
+    return _models_cache
 
 @app.route('/models', methods=['GET'])
 @jwt_required()

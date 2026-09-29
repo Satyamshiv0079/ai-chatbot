@@ -28,7 +28,7 @@ class DialogManager:
     def start_session(self):
         return self.state.create_session()
 
-    def handle(self, session_id, intent, entities, user_text, model="llama-3.3-70b-versatile"):
+    def handle(self, session_id, intent, entities, user_text, model="openai/gpt-oss-20b"):
         session = self.state.get_session(session_id)
         if not session:
             session_id = self.state.create_session()
@@ -51,7 +51,7 @@ class DialogManager:
             "entities": entities
         }
 
-    def _generate_groq_response(self, session, user_text, model="llama-3.3-70b-versatile"):
+    def _generate_groq_response(self, session, user_text, model="openai/gpt-oss-20b"):
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
         # Include last 6 turns for conversation memory
@@ -61,13 +61,35 @@ class DialogManager:
 
         messages.append({"role": "user", "content": user_text})
 
-        try:
-            chat_completion = client.chat.completions.create(
-                messages=messages,
-                model=model,
-                temperature=0.7,
-                max_tokens=2048,
-            )
-            return chat_completion.choices[0].message.content
-        except Exception as e:
-            return f"Error connecting to AI: {str(e)}"
+        # List of candidate models to try in order
+        candidate_models = [model]
+        fallbacks = [
+            "openai/gpt-oss-20b",
+            "openai/gpt-oss-120b",
+            "qwen/qwen3.8-27b",
+            "groq/compound-mini",
+        ]
+        for fb in fallbacks:
+            if fb not in candidate_models:
+                candidate_models.append(fb)
+
+        last_error = None
+        for candidate in candidate_models:
+            try:
+                chat_completion = client.chat.completions.create(
+                    messages=messages,
+                    model=candidate,
+                    temperature=0.7,
+                    max_tokens=2048,
+                )
+                return chat_completion.choices[0].message.content
+            except Exception as e:
+                err_str = str(e)
+                last_error = err_str
+                # If error is decommissioned or model not found, try next candidate
+                if "model_decommissioned" in err_str or "model_not_found" in err_str or "does not exist" in err_str:
+                    continue
+                # For rate limits or invalid key, return immediately
+                return f"Error connecting to AI: {err_str}"
+
+        return f"Error connecting to AI: {last_error}"
