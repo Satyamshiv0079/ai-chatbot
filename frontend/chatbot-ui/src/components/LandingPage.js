@@ -199,10 +199,10 @@ function LandingPage() {
 
       {/* ── Features Section ───────────────────────────────────────────────── */}
       <section className="landing-section" id="features">
-        <div className="section-header">
-          <span className="section-eyebrow">CORE CAPABILITIES</span>
-          <h2 className="section-title">Built for precision, grounding, and control</h2>
-          <p className="section-desc">
+        <div className="landing-section-header">
+          <span className="landing-section-eyebrow">CORE CAPABILITIES</span>
+          <h2 className="landing-section-title">Built for precision, grounding, and control</h2>
+          <p className="landing-section-desc">
             A production architecture designed to give you instant intelligence across multi-turn conversations and personal documents.
           </p>
         </div>
@@ -256,10 +256,10 @@ function LandingPage() {
 
       {/* ── How It Works Section ───────────────────────────────────────────── */}
       <section className="landing-section how-section" id="how-it-works">
-        <div className="section-header">
-          <span className="section-eyebrow">RAG PIPELINE</span>
-          <h2 className="section-title">How Retrieval-Augmented Generation Works</h2>
-          <p className="section-desc">
+        <div className="landing-section-header">
+          <span className="landing-section-eyebrow">RAG PIPELINE</span>
+          <h2 className="landing-section-title">How Retrieval-Augmented Generation Works</h2>
+          <p className="landing-section-desc">
             From raw document ingestion to verifiable grounded responses in milliseconds.
           </p>
         </div>
@@ -297,10 +297,10 @@ function LandingPage() {
 
       {/* ── Technology Section ─────────────────────────────────────────────── */}
       <section className="landing-section" id="technology">
-        <div className="section-header">
-          <span className="section-eyebrow">TECH STACK</span>
-          <h2 className="section-title">Built with proven, modern technologies</h2>
-          <p className="section-desc">
+        <div className="landing-section-header">
+          <span className="landing-section-eyebrow">TECH STACK</span>
+          <h2 className="landing-section-title">Built with proven, modern technologies</h2>
+          <p className="landing-section-desc">
             Production-grade stack engineered for high performance, memory efficiency, and accurate retrieval.
           </p>
         </div>

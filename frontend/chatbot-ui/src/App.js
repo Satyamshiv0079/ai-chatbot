@@ -26,10 +26,10 @@ function App() {
             <>
               <nav className="navbar glass-navbar" aria-label="Dashboard Navigation">
                 <Link to="/" className="nav-brand" style={{ textDecoration: 'none', color: 'inherit' }}>
-                  NovaMind Hub
+                  NovaMind AI
                 </Link>
                 <div className="nav-links">
-                  <Link to="/chat" className="nav-link">Chatbot</Link>
+                  <Link to="/chat" className="nav-link">Workspace</Link>
                   <Link to="/dashboard" className="nav-link">Dashboard</Link>
                 </div>
               </nav>

@@ -69,6 +69,14 @@
   color: white;
 }
 
+.stat-note {
+  font-size: 0.72rem;
+  color: #64748b;
+  font-weight: 500;
+  display: block;
+  margin-top: 2px;
+}
+
 .charts-container {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -148,7 +148,7 @@ function ChatWindow() {
       setIsConnected(true);
       const greeting = mode === 'rag'
         ? `Hello, ${getUsername() || 'there'}! 📚 You are in **Ask My Documents (RAG)** mode. Ask questions and get answers grounded strictly in your indexed documents, complete with source citations!`
-        : `Hello, ${getUsername() || 'there'}! 👋 Welcome to AI Chatbot. Ask me anything, or switch to **Ask My Documents** mode to query your files!`;
+        : `Hello, ${getUsername() || 'there'}! 👋 Welcome to NovaMind AI. Ask me anything, or switch to **Ask My Documents** mode to query your files!`;
 
       setMessages([{
         id: Date.now(), sender: 'bot', isNew: false, text: greeting,
@@ -197,8 +197,11 @@ function ChatWindow() {
         }
       ]);
     } catch (err) {
-      const msg = err?.response?.data?.error || `Failed to index ${file.name}`;
-      setUploadFeedback({ type: 'error', message: msg });
+      const serverErr = err?.response?.data?.error;
+      const friendlyMsg = serverErr && typeof serverErr === 'string' && serverErr.length < 120 && !serverErr.includes('Traceback') && !serverErr.includes('Exception')
+        ? serverErr
+        : `Couldn't index this document. The file was uploaded, but document processing failed. Please try again or check the file format.`;
+      setUploadFeedback({ type: 'error', message: friendlyMsg });
     } finally {
       setIsUploading(false);
     }
@@ -267,12 +270,12 @@ function ChatWindow() {
   // ── Export Chat ──────────────────────────────────────────────────────────────
   const handleExportChat = () => {
     if (messages.length === 0) return;
-    const exportText = messages.map(m => `### ${m.sender === 'user' ? 'User' : 'AI Chatbot'}:\n${m.text}\n${m.sources ? '\n**Sources:** ' + m.sources.map(s => `[${s.document_name}, Page ${s.page_number}]`).join(', ') : ''}`).join('\n---\n\n');
+    const exportText = messages.map(m => `### ${m.sender === 'user' ? 'User' : 'NovaMind AI'}:\n${m.text}\n${m.sources ? '\n**Sources:** ' + m.sources.map(s => `[${s.document_name}, Page ${s.page_number}]`).join(', ') : ''}`).join('\n---\n\n');
     const blob = new Blob([exportText], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `AI-Chatbot-${chatMode.toUpperCase()}-${sessionId || 'export'}.md`;
+    a.download = `NovaMind-AI-${chatMode.toUpperCase()}-${sessionId || 'export'}.md`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -394,12 +397,12 @@ function ChatWindow() {
         <div className="sidebar-header">
           <div className="sidebar-logo">
             <Bot size={20} />
-            <span>AI Chatbot</span>
+            <span>NovaMind AI</span>
           </div>
         </div>
 
         <div className="sidebar-content">
-          <button className="new-chat-btn" onClick={handleNewChat}>
+          <button className="new-chat-btn" onClick={handleNewChat} aria-label="Start New Chat">
             <PlusCircle size={15} /> New Chat
           </button>
 
@@ -407,6 +410,7 @@ function ChatWindow() {
           <button
             className={`doc-panel-toggle-btn ${isDocPanelOpen ? 'active' : ''}`}
             onClick={() => setIsDocPanelOpen(o => !o)}
+            aria-label="Open Knowledge Base Documents"
           >
             <FolderOpen size={15} />
             <span>Knowledge Base ({documents.length})</span>
@@ -414,17 +418,18 @@ function ChatWindow() {
 
           {/* Search Filter */}
           <div className="search-box">
-            <Search size={13} className="search-icon" />
+            <Search size={13} className="search-icon" aria-hidden="true" />
             <input
               type="text"
               placeholder="Search chats…"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
+              aria-label="Search past chats"
             />
           </div>
 
           <div className="recent-chats">
-            <p className="section-title">
+            <p className="chat-section-title">
               {loadingSessions ? 'Loading…' : `Recent (${filteredSessions.length})`}
             </p>
 
@@ -491,11 +496,15 @@ function ChatWindow() {
         {/* Header */}
         <header className="chat-header glass-effect">
           <div className="header-brand">
-            <button className="toggle-sidebar-btn" onClick={() => setIsSidebarOpen(o => !o)}>
+            <button
+              className="toggle-sidebar-btn"
+              onClick={() => setIsSidebarOpen(o => !o)}
+              aria-label={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+            >
               <Menu size={20} />
             </button>
             <div className="brand-text">
-              <h2>AI Chatbot</h2>
+              <h2>NovaMind AI</h2>
               <p className="status-indicator">
                 <span className={`status-dot ${isConnected ? 'online' : 'offline'}`} />
                 {isConnected ? 'Connected' : 'Connecting…'}
@@ -503,9 +512,11 @@ function ChatWindow() {
             </div>
           </div>
 
-          {/* Mode Switcher Tabs */}
-          <div className="mode-switcher-container">
+          {/* Mode Switcher Tabs (Primary Group) */}
+          <div className="mode-switcher-container" role="tablist" aria-label="Conversation Mode">
             <button
+              role="tab"
+              aria-selected={chatMode === 'chat'}
               className={`mode-tab ${chatMode === 'chat' ? 'active' : ''}`}
               onClick={() => handleModeChange('chat')}
               title="General AI Conversational Chat"
@@ -514,6 +525,8 @@ function ChatWindow() {
               <span>General AI</span>
             </button>
             <button
+              role="tab"
+              aria-selected={chatMode === 'rag'}
               className={`mode-tab ${chatMode === 'rag' ? 'active' : ''}`}
               onClick={() => handleModeChange('rag')}
               title="Ask My Documents: Grounded Q&A with Vector Search"
@@ -521,66 +534,79 @@ function ChatWindow() {
               <Database size={14} />
               <span>Ask My Documents (RAG)</span>
               {documents.length > 0 && (
-                <span className="mode-doc-count">{documents.length}</span>
+                <span className="mode-doc-count">[{documents.length}]</span>
               )}
             </button>
           </div>
 
           <div className="header-actions">
-            {/* Knowledge Base Drawer Button */}
-            <button
-              className={`action-btn ${isDocPanelOpen ? 'active' : ''}`}
-              onClick={() => setIsDocPanelOpen(o => !o)}
-              title="Manage Documents & Knowledge Base"
-            >
-              <Layers size={15} />
-              <span className="btn-text">Documents ({documents.length})</span>
-            </button>
-
-            {/* Model Switcher */}
-            <div className="model-switcher-wrapper">
-              <button className="model-switcher-btn" onClick={() => setShowModelMenu(o => !o)}>
-                <Cpu size={14} />
-                <span className="btn-text">{currentModelName}</span>
-                <ChevronDown size={13} className={showModelMenu ? 'rotated' : ''} />
+            {/* Secondary Group: Knowledge Base & Model Switcher */}
+            <div className="header-secondary-group">
+              <button
+                className={`action-btn ${isDocPanelOpen ? 'active' : ''}`}
+                onClick={() => setIsDocPanelOpen(o => !o)}
+                title="Manage Documents & Knowledge Base"
+                aria-label="Manage Documents"
+              >
+                <Layers size={15} />
+                <span className="btn-text">Documents</span>
               </button>
-              {showModelMenu && (
-                <div className="model-menu">
-                  <div className="model-menu-header">
-                    <span>Choose Model</span>
-                    <button onClick={() => setShowModelMenu(false)}><X size={14}/></button>
+
+              {/* Model Switcher */}
+              <div className="model-switcher-wrapper">
+                <button
+                  className="model-switcher-btn"
+                  onClick={() => setShowModelMenu(o => !o)}
+                  aria-label="Select AI Model"
+                  aria-expanded={showModelMenu}
+                >
+                  <Cpu size={14} />
+                  <span className="btn-text">{currentModelName}</span>
+                  <ChevronDown size={13} className={showModelMenu ? 'rotated' : ''} />
+                </button>
+                {showModelMenu && (
+                  <div className="model-menu">
+                    <div className="model-menu-header">
+                      <span>Choose Model</span>
+                      <button onClick={() => setShowModelMenu(false)} aria-label="Close Model Menu"><X size={14}/></button>
+                    </div>
+                    {models.map(m => (
+                      <button
+                        key={m.id}
+                        className={`model-menu-item ${m.id === selectedModel ? 'active' : ''}`}
+                        onClick={() => { setSelectedModel(m.id); setShowModelMenu(false); }}
+                      >
+                        <span className="model-name">{m.name}</span>
+                        {m.id === selectedModel && <span className="model-check">✓</span>}
+                      </button>
+                    ))}
                   </div>
-                  {models.map(m => (
-                    <button
-                      key={m.id}
-                      className={`model-menu-item ${m.id === selectedModel ? 'active' : ''}`}
-                      onClick={() => { setSelectedModel(m.id); setShowModelMenu(false); }}
-                    >
-                      <span className="model-name">{m.name}</span>
-                      {m.id === selectedModel && <span className="model-check">✓</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
-            {/* Export Chat */}
-            <button className="action-btn" onClick={handleExportChat} title="Export Chat Markdown">
-              <Download size={15} />
-              <span className="btn-text">Export</span>
-            </button>
+            {/* Utility Group: Export, Theme, Voice */}
+            <div className="header-utility-group">
+              <button className="action-btn" onClick={handleExportChat} title="Export Chat Markdown" aria-label="Export Chat">
+                <Download size={15} />
+                <span className="btn-text">Export</span>
+              </button>
 
-            {/* Dark Mode Toggle */}
-            <button className="action-btn" onClick={() => setDarkMode(d => !d)} title="Toggle Dark Mode">
-              {darkMode ? <Sun size={16} /> : <Moon size={16} />}
-              <span className="btn-text">{darkMode ? 'Light' : 'Dark'}</span>
-            </button>
+              <button className="action-btn" onClick={() => setDarkMode(d => !d)} title="Toggle Dark/Light Mode" aria-label="Toggle Dark/Light Mode">
+                {darkMode ? <Sun size={16} /> : <Moon size={16} />}
+                <span className="btn-text">{darkMode ? 'Light' : 'Dark'}</span>
+              </button>
 
-            {/* Voice Mode Toggle */}
-            <button className={`action-btn ${voiceEnabled ? 'active' : ''}`} onClick={() => setVoiceEnabled(v => !v)}>
-              {voiceEnabled ? <Volume2 size={16}/> : <VolumeX size={16}/>}
-              <span className="btn-text">Voice</span>
-            </button>
+              <button
+                className={`action-btn ${voiceEnabled ? 'active' : ''}`}
+                onClick={() => setVoiceEnabled(v => !v)}
+                title="Toggle Voice Mode"
+                aria-label="Toggle Voice Mode"
+              >
+                {voiceEnabled ? <Volume2 size={16}/> : <VolumeX size={16}/>}
+                <span className="btn-text">Voice</span>
+              </button>
+            </div>
           </div>
         </header>
 

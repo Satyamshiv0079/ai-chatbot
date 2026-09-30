@@ -470,13 +470,13 @@
   padding: 5rem 1.5rem;
 }
 
-.section-header {
+.landing-section-header {
   text-align: center;
   max-width: 650px;
   margin: 0 auto 3.5rem;
 }
 
-.section-eyebrow {
+.landing-section-eyebrow {
   font-size: 0.8rem;
   font-weight: 700;
   color: #818cf8;
@@ -485,7 +485,7 @@
   margin-bottom: 0.5rem;
 }
 
-.section-title {
+.landing-section-title {
   font-size: clamp(1.8rem, 3.5vw, 2.4rem);
   font-weight: 800;
   letter-spacing: -0.02em;
@@ -493,7 +493,7 @@
   margin: 0 0 1rem;
 }
 
-.section-desc {
+.landing-section-desc {
   font-size: 1rem;
   color: #94a3b8;
   line-height: 1.6;

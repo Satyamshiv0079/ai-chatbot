@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-import { MessageSquare, Users, Activity, BarChart2 } from 'lucide-react';
+import { MessageSquare, Users, FileText, BarChart2 } from 'lucide-react';
 import './Dashboard.css';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:5000';
@@ -45,17 +45,18 @@ const Dashboard = () => {
           </div>
         </div>
         <div className="stat-card glass-card">
-          <div className="stat-icon"><Activity size={24} /></div>
+          <div className="stat-icon"><FileText size={24} /></div>
           <div className="stat-info">
-            <h3>Active Rate</h3>
-            <p>98.5%</p>
+            <h3>Indexed Documents</h3>
+            <p>{stats.total_documents ?? 0}</p>
           </div>
         </div>
         <div className="stat-card glass-card">
           <div className="stat-icon"><BarChart2 size={24} /></div>
           <div className="stat-info">
-            <h3>Resolution</h3>
-            <p>87%</p>
+            <h3>Resolution Rate</h3>
+            <p>—</p>
+            <span className="stat-note">(Not tracked)</span>
           </div>
         </div>
       </div>
