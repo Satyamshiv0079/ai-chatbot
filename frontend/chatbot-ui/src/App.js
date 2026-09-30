@@ -1,9 +1,10 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import ChatWindow from './components/ChatWindow';
 import Dashboard from './components/Dashboard';
 import Login from './components/Login';
 import Signup from './components/Signup';
+import LandingPage from './components/LandingPage';
 import './App.css';
 
 function App() {
@@ -11,10 +12,9 @@ function App() {
     <Router>
       <div className="app-container">
         <Routes>
+          <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
-          
-          <Route path="/" element={<Navigate to="/login" replace />} />
           
           <Route path="/chat" element={
             <>
@@ -24,8 +24,10 @@ function App() {
           
           <Route path="/dashboard" element={
             <>
-              <nav className="navbar glass-navbar">
-                <div className="nav-brand">AI Assistant Hub</div>
+              <nav className="navbar glass-navbar" aria-label="Dashboard Navigation">
+                <Link to="/" className="nav-brand" style={{ textDecoration: 'none', color: 'inherit' }}>
+                  NovaMind Hub
+                </Link>
                 <div className="nav-links">
                   <Link to="/chat" className="nav-link">Chatbot</Link>
                   <Link to="/dashboard" className="nav-link">Dashboard</Link>
