@@ -3,13 +3,13 @@ import MessageBubble from './MessageBubble';
 import {
   createSession, sendMessage, getSessions, getSessionMessages,
   deleteSession, renameSession, getModels, isAuthenticated, getUsername, logout,
-  uploadDocument, getDocuments, deleteDocument, sendRAGQuery
+  uploadDocument, getDocuments, deleteDocument, sendRAGQuery, checkBackendHealth
 } from '../services/chatService';
 import TextareaAutosize from 'react-textarea-autosize';
 import {
   Mic, MicOff, Send, PlusCircle, Volume2, VolumeX, Bot,
   Moon, Sun, LogOut, Menu, Trash2, ChevronDown, Cpu, X,
-  Paperclip, Download, Search, Edit2, Check,
+  Paperclip, Download, Search, Edit2, Check, Sparkles,
   FolderOpen, Upload, Layers, MessageSquare, Database, AlertCircle, CheckCircle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -36,7 +36,7 @@ function ChatWindow() {
   const [input, setInput]               = useState('');
   const [sessionId, setSessionId]       = useState(null);
   const [isLoading, setIsLoading]       = useState(false);
-  const [isConnected, setIsConnected]   = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('connecting'); // 'connecting' | 'connected' | 'unavailable'
   const [isListening, setIsListening]   = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -139,23 +139,44 @@ function ChatWindow() {
     );
   }, []);
 
+  // ── Health verification with single graceful retry for cold starts ─────────────
+  useEffect(() => {
+    let isMounted = true;
+    let retryTimer = null;
+
+    const verifyBackend = async (isRetry = false) => {
+      const healthy = await checkBackendHealth(isRetry ? 8000 : 5000);
+      if (!isMounted) return;
+      if (healthy) {
+        setConnectionStatus('connected');
+      } else if (!isRetry) {
+        retryTimer = setTimeout(() => {
+          verifyBackend(true);
+        }, 3000);
+      } else {
+        setConnectionStatus('unavailable');
+      }
+    };
+
+    verifyBackend();
+    return () => {
+      isMounted = false;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, []);
+
   // ── Init new session ─────────────────────────────────────────────────────────
   const initNewSession = useCallback(async (mode = chatMode) => {
     try {
       const id = await createSession();
       setSessionId(id);
       setActiveSessionId(id);
-      setIsConnected(true);
-      const greeting = mode === 'rag'
-        ? `Hello, ${getUsername() || 'there'}! 📚 You are in **Ask My Documents (RAG)** mode. Ask questions and get answers grounded strictly in your indexed documents, complete with source citations!`
-        : `Hello, ${getUsername() || 'there'}! 👋 Welcome to NovaMind AI. Ask me anything, or switch to **Ask My Documents** mode to query your files!`;
-
-      setMessages([{
-        id: Date.now(), sender: 'bot', isNew: false, text: greeting,
-      }]);
+      setConnectionStatus('connected');
+      setMessages([]);
       loadSessions();
-    } catch {
-      setMessages([{ id: Date.now(), sender: 'bot', text: 'Could not connect. Make sure the backend is running.' }]);
+    } catch (err) {
+      console.error('Session init error:', err);
+      setConnectionStatus('unavailable');
     }
   }, [loadSessions, chatMode]);
 
@@ -172,9 +193,12 @@ function ChatWindow() {
       const data = await getSessionMessages(sess.session_id);
       setSessionId(data.session_id);
       setActiveSessionId(data.session_id);
-      setIsConnected(true);
+      setConnectionStatus('connected');
       setMessages(data.messages.map((m, i) => ({ ...m, id: i, isNew: false })));
-    } catch {}
+    } catch (err) {
+      console.error('Load session error:', err);
+      setConnectionStatus('unavailable');
+    }
   };
 
   // ── Upload Document to Knowledge Base (RAG) ──────────────────────────────────
@@ -359,6 +383,7 @@ function ChatWindow() {
         playReceiveSound();
         if (voiceEnabled) speakText(result.bot_response);
 
+        setConnectionStatus('connected');
         if (result.session_id && result.session_id !== sessionId) {
           setSessionId(result.session_id);
           setActiveSessionId(result.session_id);
@@ -367,9 +392,26 @@ function ChatWindow() {
       }
     } catch (err) {
       if (err?.response?.status === 401) { logout(); navigate('/login'); return; }
+      if (err?.code === 'ERR_NETWORK' || !err?.response) {
+        setConnectionStatus('unavailable');
+      }
       setMessages(prev => [...prev, { id: Date.now()+1, sender: 'bot', text: 'Something went wrong. Please check your connection and try again.' }]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // ── Empty State Suggestion Handlers ──────────────────────────────────────────
+  const handleSuggestionClick = (action) => {
+    if (action === 'Explain something') {
+      setInput('Explain how NovaMind AI processes documents and generates answers.');
+    } else if (action === 'Upload a document') {
+      fileInputRef.current?.click();
+    } else if (action === 'Ask my documents') {
+      handleModeChange('rag');
+      if (documents.length === 0) {
+        setIsDocPanelOpen(true);
+      }
     }
   };
 
@@ -505,10 +547,21 @@ function ChatWindow() {
             </button>
             <div className="brand-text">
               <h2>NovaMind AI</h2>
-              <p className="status-indicator">
-                <span className={`status-dot ${isConnected ? 'online' : 'offline'}`} />
-                {isConnected ? 'Connected' : 'Connecting…'}
-              </p>
+              <div
+                className="status-indicator"
+                title={
+                  connectionStatus === 'connected' ? 'Connected to backend' :
+                  connectionStatus === 'connecting' ? 'Connecting to backend...' :
+                  'Server unavailable'
+                }
+              >
+                <span className={`status-dot ${connectionStatus}`} />
+                <span>
+                  {connectionStatus === 'connected' && 'Connected'}
+                  {connectionStatus === 'connecting' && 'Connecting…'}
+                  {connectionStatus === 'unavailable' && 'Server unavailable'}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -711,6 +764,44 @@ function ChatWindow() {
         {/* Messages */}
         <main className="chat-main">
           <div className="messages-container">
+            {messages.length === 0 && (
+              <div className="chat-empty-state">
+                <div className="empty-state-icon">
+                  <Bot size={34} />
+                </div>
+                <h3 className="empty-state-title">How can I help?</h3>
+                <p className="empty-state-subtitle">
+                  Ask a question, upload a document, or switch to Ask My Documents.
+                </p>
+                <div className="empty-state-suggestions">
+                  <button
+                    type="button"
+                    className="suggestion-chip"
+                    onClick={() => handleSuggestionClick('Explain something')}
+                  >
+                    <Sparkles size={14} />
+                    <span>Explain something</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="suggestion-chip"
+                    onClick={() => handleSuggestionClick('Upload a document')}
+                  >
+                    <Upload size={14} />
+                    <span>Upload a document</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="suggestion-chip"
+                    onClick={() => handleSuggestionClick('Ask my documents')}
+                  >
+                    <FolderOpen size={14} />
+                    <span>Ask my documents</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {messages.map(msg => <MessageBubble key={msg.id} message={msg} />)}
 
             {isLoading && (
@@ -781,7 +872,11 @@ function ChatWindow() {
             </button>
           </div>
           <p className="footer-disclaimer">
-            Mode: <strong>{chatMode === 'rag' ? 'Ask My Documents (RAG)' : 'General AI Chat'}</strong> · Using <strong>{currentModelName}</strong> · Production RAG with FAISS & Groq.
+            {chatMode === 'rag' ? (
+              <>Mode: <strong>Ask My Documents (RAG)</strong> · Using <strong>{currentModelName}</strong> · FAISS</>
+            ) : (
+              <>Mode: <strong>General AI</strong> · Using <strong>{currentModelName}</strong></>
+            )}
           </p>
         </footer>
       </div>

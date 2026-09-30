@@ -19,6 +19,16 @@ const authHeaders = () => ({
   },
 });
 
+// ── Health API ────────────────────────────────────────────────────────────────
+export const checkBackendHealth = async (timeoutMs = 6000) => {
+  try {
+    const res = await axios.get(`${API_URL}/health`, { timeout: timeoutMs });
+    return res.data?.status === 'healthy';
+  } catch {
+    return false;
+  }
+};
+
 // ── Auth API ──────────────────────────────────────────────────────────────────
 export const registerUser = async (username, password, email) => {
   const res = await axios.post(`${API_URL}/auth/register`, { username, password, email }, { timeout: 45000 });
