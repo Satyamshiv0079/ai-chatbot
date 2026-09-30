@@ -4,32 +4,42 @@ import re, os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from training_data import INTENTS
 
+import threading
+
 id2intent = {i: intent for i, intent in enumerate(INTENTS)}
 
 class NLPPredictor:
     def __init__(self, model_path=None):
+        self.model_path = model_path or os.path.join(os.path.dirname(__file__), 'model')
         self.use_torch = False
         self.tokenizer = None
         self.model = None
+        self._loaded = False
+        self._lock = threading.Lock()
 
-        # Try loading PyTorch/Transformers if installed, otherwise use lightweight fallback
-        try:
-            import torch
-            from transformers import AutoTokenizer, BertForSequenceClassification
-            
-            if model_path is None:
-                model_path = os.path.join(os.path.dirname(__file__), 'model')
-            
-            if os.path.isdir(model_path) and os.path.exists(os.path.join(model_path, 'config.json')):
-                print(f"Loading local BERT model from {model_path}...")
-                self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-                self.model = BertForSequenceClassification.from_pretrained(model_path)
-                self.model.eval()
-                self.use_torch = True
-        except Exception as e:
-            print(f"Running in lightweight cloud mode (no PyTorch required): {e}")
+    def _ensure_loaded(self):
+        """Lazily load BERT model weights on first intent prediction."""
+        if not self._loaded:
+            with self._lock:
+                if not self._loaded:
+                    try:
+                        import torch
+                        from transformers import AutoTokenizer, BertForSequenceClassification
+                        
+                        if os.path.isdir(self.model_path) and os.path.exists(os.path.join(self.model_path, 'config.json')):
+                            print(f"[NLPPredictor] Lazy loading BERT model from {self.model_path}...")
+                            self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
+                            self.model = BertForSequenceClassification.from_pretrained(self.model_path)
+                            self.model.eval()
+                            self.use_torch = True
+                            print("[NLPPredictor] BERT model loaded successfully.")
+                    except Exception as e:
+                        print(f"[NLPPredictor] Running in lightweight fallback mode: {e}")
+                    finally:
+                        self._loaded = True
 
     def predict_intent(self, text):
+        self._ensure_loaded()
         if self.use_torch and self.model and self.tokenizer:
             import torch
             inputs = self.tokenizer(
