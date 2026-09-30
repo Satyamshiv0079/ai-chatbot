@@ -28,8 +28,8 @@ function Login() {
       localStorage.setItem('chatUsername', data.user.username);
       navigate('/chat');
     } catch (err) {
-      if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')) {
-        setError('Server cold start: Render free tier takes ~30s to wake up. Please click Sign In once more!');
+      if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout') || err?.message === 'Network Error' || !err?.response) {
+        setError('Connecting to backend server... Render free tier takes ~30-45s to wake up from sleep. Please wait a moment and click Sign In again!');
       } else {
         const msg = err?.response?.data?.error || 'Login failed. Please try again.';
         setError(msg);

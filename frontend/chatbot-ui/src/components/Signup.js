@@ -32,8 +32,8 @@ function Signup() {
       localStorage.setItem('chatUsername', data.user.username);
       navigate('/chat');
     } catch (err) {
-      if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')) {
-        setError('Server cold start: Render free tier takes ~30s to wake up. Please click Create Account once more!');
+      if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout') || err?.message === 'Network Error' || !err?.response) {
+        setError('Connecting to backend server... Render free tier takes ~30-45s to wake up from sleep. Please wait a moment and click Create Account again!');
       } else {
         const msg =
           err?.response?.data?.error ||
