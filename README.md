@@ -1,8 +1,8 @@
-# AI Chatbot — Production RAG & Multi-Model GenAI Platform
+# NovaMind AI — Production RAG & Multi-Model GenAI Platform
 
-A production-grade GenAI application combining multi-turn conversational AI with Retrieval-Augmented Generation (RAG) over user documents (PDF, DOCX, TXT). Powered by isolated FAISS vector stores, HuggingFace SentenceTransformers (`all-MiniLM-L6-v2`), LangChain orchestration, and active Groq LLM inference with automated fallback routing.
+A production-grade GenAI SaaS platform combining multi-turn conversational AI with Retrieval-Augmented Generation (RAG) over user documents (PDF, DOCX, TXT). Powered by isolated FAISS vector stores, HuggingFace SentenceTransformers (`all-MiniLM-L6-v2`), LangChain orchestration, and active Groq LLM inference with automated fallback routing.
 
-🌐 **Live Production App**: [https://ai-chatbot-6njs1ys87-satyamshiv0079s-projects.vercel.app](https://ai-chatbot-3efn0nur1-satyamshiv0079s-projects.vercel.app/login) 
+🌐 **Live Production App**: [https://ai-chatbot-km3hk7gvd-satyamshiv0079s-projects.vercel.app](https://ai-chatbot-km3hk7gvd-satyamshiv0079s-projects.vercel.app/)
 
 ⚡ **Backend API**: [https://ai-chatbot-w1x8.onrender.com](https://ai-chatbot-w1x8.onrender.com)
 
@@ -12,9 +12,9 @@ A production-grade GenAI application combining multi-turn conversational AI with
 
 ## 📸 Screenshots
 
-| Conversational Interface & RAG Mode | Multi-Model Selection & Status | Cloud API & Session Architecture |
+| Modern GenAI Landing Page | Conversational Interface & RAG Mode | Accessible Auth & Password Controls |
 |:---:|:---:|:---:|
-| ![Conversational Interface](docs/screenshots/chat-interface.png) | ![Multi-Model Selection](docs/screenshots/model-selection.png) | ![API Architecture](docs/screenshots/api-architecture.png) |
+| ![NovaMind Landing Page](docs/screenshots/landing-page.png) | ![Conversational Workspace](docs/screenshots/chat-interface.png) | ![Accessible Login](docs/screenshots/login-page.png) |
 
 ---
 
@@ -198,6 +198,15 @@ The application is engineered to operate stably within constrained memory enviro
 | Method | Endpoint | Auth | Description |
 |---|---|:---:|---|
 | `GET` | `/api/dashboard/stats` | ✅ | User-isolated metrics: sessions, messages, documents, intent distribution, and recent activity |
+
+### 🌐 Frontend Routes
+| Route | Access | Description |
+|---|:---:|---|
+| `/` | Public | Modern GenAI SaaS landing page featuring product preview, pipeline, and tech stack |
+| `/login` | Public | Accessible sign-in with password toggle, keyboard navigation, and automatic wake-up retry |
+| `/signup` | Public | Registration with accessible password strength meter |
+| `/chat` | Authenticated | Dual-mode AI workspace (Mode A: General AI Chat, Mode B: Ask My Documents RAG) |
+| `/dashboard` | Authenticated | System analytics overview and user-isolated intent distribution |
 
 ---
 
