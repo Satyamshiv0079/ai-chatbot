@@ -274,6 +274,155 @@ def test_api_document_lifecycle(auth_client):
     assert not any(d['id'] == doc_id for d in list_after_del.json['documents'])
 
 
+def test_document_processor_pdf(tmp_path):
+    processor = DocumentProcessor(chunk_size=150, chunk_overlap=30)
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_bytes = (
+        b'%PDF-1.4\n'
+        b'1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n'
+        b'2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n'
+        b'3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj\n'
+        b'4 0 obj << /Length 55 >> stream\nBT /F1 12 Tf 50 250 Td (Annual leave allowance is 18 days.) Tj ET\nendstream endobj\n'
+        b'5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n'
+        b'xref\n0 6\n0000000000 65535 f \n0000000010 00000 n \n0000000060 00000 n \n0000000117 00000 n \n0000000244 00000 n \n0000000350 00000 n \n'
+        b'trailer << /Size 6 /Root 1 0 R >>\nstartxref\n424\n%%EOF\n'
+    )
+    pdf_path.write_bytes(pdf_bytes)
+
+    chunks, pages = processor.process_file(
+        file_path=str(pdf_path),
+        filename="sample.pdf",
+        document_id=10,
+        user_id="user_test"
+    )
+    assert pages >= 1
+    assert len(chunks) >= 1
+    assert "18 days" in chunks[0]["content"]
+
+
+def test_document_processor_limits(tmp_path):
+    processor = DocumentProcessor(chunk_size=50, chunk_overlap=10, max_chunks=3)
+    txt_file = tmp_path / "long_sample.txt"
+    txt_file.write_text("Sentence one. " * 30, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="exceeds maximum limit of 3 chunks"):
+        processor.process_file(
+            file_path=str(txt_file),
+            filename="long_sample.txt",
+            document_id=11,
+            user_id="user_test"
+        )
+
+
+def test_embedding_service_memory_optimizations():
+    svc1 = get_embedding_service()
+    svc2 = get_embedding_service()
+    assert svc1 is svc2, "EmbeddingService must be a singleton"
+
+    assert svc1.dimension == 384
+    texts = [f"Sample sentence number {i} for memory batching test." for i in range(25)]
+    embs = svc1.embed_texts(texts, batch_size=8)
+    assert isinstance(embs, np.ndarray)
+    assert embs.shape == (25, 384)
+    assert embs.dtype == np.float32
+
+    for vec in embs:
+        norm = np.linalg.norm(vec)
+        assert abs(norm - 1.0) < 1e-4
+
+
+def test_faiss_batched_indexing_and_rebuild(tmp_path):
+    store = FAISSUserStore(base_dir=str(tmp_path / "batched_vec"))
+    embed_svc = get_embedding_service()
+
+    chunks_doc1 = [
+        {
+            "content": f"Document 1 paragraph {i} discussing cloud architecture.",
+            "document_id": 301,
+            "document_name": "cloud.txt",
+            "page_number": 1,
+            "chunk_index": i,
+            "user_id": "architect"
+        }
+        for i in range(12)
+    ]
+    chunks_doc2 = [
+        {
+            "content": f"Document 2 paragraph {i} discussing database optimization.",
+            "document_id": 302,
+            "document_name": "database.txt",
+            "page_number": 1,
+            "chunk_index": i,
+            "user_id": "architect"
+        }
+        for i in range(12)
+    ]
+
+    store.add_chunks_batched("architect", chunks_doc1, embed_svc, batch_size=4)
+    store.add_chunks_batched("architect", chunks_doc2, embed_svc, batch_size=4)
+    assert store.get_user_chunks_count("architect") == 24
+
+    query_vec = embed_svc.embed_query("cloud architecture")
+    hits = store.similarity_search("architect", query_vec, top_k=2)
+    assert len(hits) == 2
+    assert any(h["document_id"] == 301 for h in hits)
+
+    store.delete_document("architect", doc_id=301, embedding_service=embed_svc, batch_size=4)
+    assert store.get_user_chunks_count("architect") == 12
+
+    hits_after = store.similarity_search("architect", query_vec, top_k=5)
+    assert not any(h["document_id"] == 301 for h in hits_after)
+
+
+def test_api_pdf_upload(auth_client):
+    pdf_bytes = (
+        b'%PDF-1.4\n'
+        b'1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n'
+        b'2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n'
+        b'3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj\n'
+        b'4 0 obj << /Length 55 >> stream\nBT /F1 12 Tf 50 250 Td (Annual leave allowance is 18 days.) Tj ET\nendstream endobj\n'
+        b'5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n'
+        b'xref\n0 6\n0000000000 65535 f \n0000000010 00000 n \n0000000060 00000 n \n0000000117 00000 n \n0000000244 00000 n \n0000000350 00000 n \n'
+        b'trailer << /Size 6 /Root 1 0 R >>\nstartxref\n424\n%%EOF\n'
+    )
+    data = {'file': (io.BytesIO(pdf_bytes), 'policy.pdf')}
+    res = auth_client.post('/api/documents/upload', data=data, content_type='multipart/form-data')
+    assert res.status_code == 201
+    doc = res.json['document']
+    assert doc['filename'] == 'policy.pdf'
+    assert doc['status'] == 'ready'
+
+    auth_client.delete(f'/api/documents/{doc["id"]}')
+
+
+def test_api_docx_upload(auth_client):
+    doc = docx.Document()
+    doc.add_paragraph("Company security policies require two-factor authentication.")
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+
+    data = {'file': (buf, 'security.docx')}
+    res = auth_client.post('/api/documents/upload', data=data, content_type='multipart/form-data')
+    assert res.status_code == 201
+    doc_res = res.json['document']
+    assert doc_res['filename'] == 'security.docx'
+    assert doc_res['status'] == 'ready'
+
+    auth_client.delete(f'/api/documents/{doc_res["id"]}')
+
+
+def test_api_oversized_document_rejected(auth_client, monkeypatch):
+    import api.app as app_mod
+    monkeypatch.setattr(app_mod, "MAX_UPLOAD_SIZE_MB", 0.0001)
+
+    big_content = b"Large text payload " * 100
+    data = {'file': (io.BytesIO(big_content), 'huge.txt')}
+    res = auth_client.post('/api/documents/upload', data=data, content_type='multipart/form-data')
+    assert res.status_code in (400, 413)
+    assert "exceeds" in res.json.get("error", "").lower()
+
+
 # ==============================================================================
 # SPECIFIC TESTS DEMANDED FOR GENUINE LANGCHAIN PIPELINE & INTERVIEW DEFENSE
 # ==============================================================================

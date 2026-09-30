@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 import pypdf
 import docx
 
@@ -12,14 +12,26 @@ except ImportError:
         RecursiveCharacterTextSplitter = None
 
 
+MAX_DOCUMENT_PAGES = int(os.environ.get("MAX_DOCUMENT_PAGES", 100))
+MAX_DOCUMENT_CHUNKS = int(os.environ.get("MAX_DOCUMENT_CHUNKS", 500))
+
 class DocumentProcessor:
     """
     Extracts text and page metadata from PDF, DOCX, and TXT files,
     and applies recursive character chunking with overlap.
+    Includes memory/resource protection against oversized documents.
     """
-    def __init__(self, chunk_size: int = 800, chunk_overlap: int = 120):
+    def __init__(
+        self,
+        chunk_size: int = 800,
+        chunk_overlap: int = 120,
+        max_pages: Optional[int] = None,
+        max_chunks: Optional[int] = None
+    ):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
+        self.max_pages = max_pages or MAX_DOCUMENT_PAGES
+        self.max_chunks = max_chunks or MAX_DOCUMENT_CHUNKS
 
         if RecursiveCharacterTextSplitter:
             self.splitter = RecursiveCharacterTextSplitter(
@@ -135,6 +147,11 @@ class DocumentProcessor:
         else:
             pages_data, total_pages = self.extract_from_text(file_path)
 
+        if total_pages > self.max_pages:
+            raise ValueError(
+                f"Document exceeds maximum page limit of {self.max_pages} pages (found {total_pages})."
+            )
+
         all_chunks = []
         chunk_idx = 0
 
@@ -147,6 +164,11 @@ class DocumentProcessor:
                 piece_clean = piece.strip()
                 if len(piece_clean) < 15:  # Skip tiny whitespace/artifacts
                     continue
+
+                if chunk_idx >= self.max_chunks:
+                    raise ValueError(
+                        f"Document exceeds maximum limit of {self.max_chunks} chunks."
+                    )
 
                 metadata = {
                     "document_id": document_id,

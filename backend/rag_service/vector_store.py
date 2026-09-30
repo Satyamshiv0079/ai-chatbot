@@ -77,9 +77,50 @@ class FAISSUserStore:
             else:
                 all_chunks = existing_chunks + list(new_chunks)
 
-            index.add(embeddings)
+            index.add(embeddings.astype(np.float32, copy=False))
             self._save_user_data(user_id, index, all_chunks)
             print(f"[FAISSUserStore] Added {len(new_chunks)} chunks for user '{user_id}'. Total: {index.ntotal}")
+
+    def add_chunks_batched(
+        self,
+        user_id: str,
+        chunks: List[Dict[str, Any]],
+        embedding_service: Any,
+        batch_size: int = 16
+    ):
+        """
+        Memory-safe stream/batch document indexing.
+        Embeds chunks in batches of 8-16 and incrementally appends to the user's FAISS index,
+        releasing temporary arrays immediately to avoid RAM spikes on Render.
+        """
+        if not chunks:
+            return
+
+        import gc
+        total = len(chunks)
+        with self._lock:
+            index, existing_chunks = self._load_user_data(user_id)
+            dim = embedding_service.dimension
+
+            if index is None:
+                index = faiss.IndexFlatIP(dim)
+                all_chunks = []
+            else:
+                all_chunks = existing_chunks
+
+            for i in range(0, total, batch_size):
+                batch_chunks = chunks[i : i + batch_size]
+                batch_texts = [c["content"] for c in batch_chunks]
+                batch_emb = embedding_service.embed_texts(batch_texts, batch_size=batch_size)
+
+                index.add(batch_emb.astype(np.float32, copy=False))
+                all_chunks.extend(batch_chunks)
+
+                del batch_texts, batch_emb, batch_chunks
+
+            self._save_user_data(user_id, index, all_chunks)
+            print(f"[FAISSUserStore] Document indexing completed: {total} chunks added for user '{user_id}'. Total in index: {index.ntotal}")
+            gc.collect()
 
     def similarity_search(
         self,
@@ -130,10 +171,12 @@ class FAISSUserStore:
 
         return results
 
-    def delete_document(self, user_id: str, doc_id: int, embedding_service=None):
+    def delete_document(self, user_id: str, doc_id: int, embedding_service=None, batch_size: int = 16):
         """
-        Removes all chunks for doc_id and rebuilds the FAISS index for this user.
+        Removes all chunks for doc_id and rebuilds the FAISS index for this user
+        using memory-safe batching.
         """
+        import gc
         with self._lock:
             index, chunks = self._load_user_data(user_id)
             if not chunks:
@@ -152,18 +195,25 @@ class FAISSUserStore:
                 print(f"[FAISSUserStore] Deleted doc {doc_id}. Vector store for user '{user_id}' is now empty.")
                 return
 
-            # Rebuild index for remaining chunks
+            # Rebuild index for remaining chunks using memory-safe batching
             if embedding_service is None:
                 from .embedding_service import get_embedding_service
                 embedding_service = get_embedding_service()
 
-            texts = [c["content"] for c in remaining_chunks]
-            embeddings = embedding_service.embed_texts(texts)
+            dim = embedding_service.dimension
+            new_index = faiss.IndexFlatIP(dim)
+            total = len(remaining_chunks)
 
-            new_index = faiss.IndexFlatIP(embeddings.shape[1])
-            new_index.add(embeddings)
+            for i in range(0, total, batch_size):
+                batch_chunks = remaining_chunks[i : i + batch_size]
+                batch_texts = [c["content"] for c in batch_chunks]
+                batch_emb = embedding_service.embed_texts(batch_texts, batch_size=batch_size)
+                new_index.add(batch_emb.astype(np.float32, copy=False))
+                del batch_texts, batch_emb, batch_chunks
+
             self._save_user_data(user_id, new_index, remaining_chunks)
-            print(f"[FAISSUserStore] Rebuilt index for user '{user_id}' after deleting doc {doc_id}. Chunks remaining: {len(remaining_chunks)}")
+            print(f"[FAISSUserStore] FAISS index rebuilt for user '{user_id}' after deleting doc {doc_id}. Chunks remaining: {len(remaining_chunks)}")
+            gc.collect()
 
     def get_user_chunks_count(self, user_id: str) -> int:
         with self._lock:

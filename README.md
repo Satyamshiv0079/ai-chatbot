@@ -56,7 +56,7 @@ The platform operates in two distinct, production-engineered operational modes:
                         │                                        │
                         │                                        ▼
                         │                             Strict Grounded Context Prompt
-                        │                             (Zero Hallucination Guarantee)
+                        │                             (Grounded Refusal Guardrails)
                         │                                        │
                         └───────────────────────┬────────────────┘
                                                 │
@@ -77,7 +77,7 @@ The platform operates in two distinct, production-engineered operational modes:
 - **Document Ingestion**: Supports `.pdf`, `.docx`, and `.txt` with per-page text extraction.
 - **Semantic Chunking**: LangChain recursive text splitter with 800 character chunk size and 120 character overlap to maintain context across chunk boundaries.
 - **Dense Vector Embeddings**: SentenceTransformer (`all-MiniLM-L6-v2`) generating 384-dimensional normalized vectors running locally on CPU.
-- **Isolated Vector Storage**: Per-user FAISS `IndexFlatIP` indices partitioned at `backend/vector_stores/<user_id>/`. Strict multi-tenant isolation guarantees zero cross-user data leakage.
+- **Isolated Vector Storage**: Per-user FAISS `IndexFlatIP` indices partitioned at `backend/vector_stores/<user_id>/`. Strict multi-tenant isolation guarantees strong cross-user data isolation.
 - **Strict Grounded Answering**: Prompt constraints enforce that answers are derived strictly from retrieved context. If information is not in the documents, the model responds: *"I couldn't find this information in the provided documents."*
 - **Verifiable Source Citations**: Responses return structured source metadata rendered as interactive badges in the UI displaying document name, page number, similarity percentage, and preview snippet.
 
@@ -91,7 +91,7 @@ flowchart TD
     D --> E["FAISS Vector Store (backend/vector_stores/&lt;user_id&gt;/)<br/>(cosine similarity search, top-k chunks)"]
     E --> F["LangChain Document Objects (LCDocument)<br/>(page_content + metadata: doc_name, page, chunk_idx)"]
     F --> G["LangChain BaseRetriever (UserScopedRetriever)<br/>(retrieves relevant documents for user)"]
-    G --> H["LangChain ChatPromptTemplate<br/>(strict context injection + zero-hallucination rules)"]
+    G --> H["LangChain ChatPromptTemplate<br/>(strict context injection + grounded retrieval rules)"]
     H --> I["LangChain ChatGroq LLM<br/>(with RunnableWithFallbacks: gpt-oss-20b → gpt-oss-120b → qwen3.8-27b)"]
     I --> J["LangChain StrOutputParser<br/>(clean string output)"]
     J --> K["Response + Structured Sources<br/>(doc name, page number, similarity %, snippet)"]
@@ -115,7 +115,7 @@ Facebook AI Similarity Search (FAISS) is an industry-standard, high-performance 
 LangChain provides standard composable primitives for production GenAI architectures. In this application, LangChain is deeply integrated across the runtime pipeline:
 1. Custom `UserScopedRetriever` subclasses `BaseRetriever` to decouple retrieval from model generation.
 2. Retrieved chunks are normalized into standard LangChain `Document` objects containing rich metadata.
-3. `ChatPromptTemplate` enforces rigorous system prompts and zero-hallucination guardrails.
+3. `ChatPromptTemplate` enforces rigorous system prompts and grounded refusal guardrails.
 4. `ChatGroq` is composed with `.with_fallbacks()` into a resilient LangChain Expression Language (LCEL) sequence (`prompt | llm | StrOutputParser()`).
 
 ### Why Sentence Transformers?
@@ -128,6 +128,17 @@ BERT (`bert-base-uncased`) is a bidirectional transformer encoder fine-tuned in 
 Groq's custom Language Processing Units (LPUs) provide near-instantaneous inference speeds (hundreds of tokens per second) for state-of-the-art open models like `openai/gpt-oss-20b`, `openai/gpt-oss-120b`, and `qwen/qwen3.8-27b`. Because RAG already requires document retrieval before generation, Groq's high token throughput keeps total user wait time well under 1-2 seconds, creating a truly responsive conversational experience.
 
 ---
+
+## ⚡ Render Memory Optimization
+
+The application is engineered to operate stably within constrained memory environments (such as Render's 512 MB free tier) by employing targeted resource management strategies:
+
+* **Lazy Sentence Transformer Loading**: Embedding model weights (ll-MiniLM-L6-v2) are loaded on-demand only when a document upload or RAG query is executed, ensuring lightweight startup, login, and standard chat operations.
+* **Batched Embedding Generation**: Chunks are processed in small, bounded batches (8–16 chunks) to prevent large temporary activation tensor spikes.
+* **Memory-Safe FAISS Indexing**: Vector additions and deletions rebuild incrementally in batches rather than holding full document datasets in memory simultaneously.
+* **Bounded Document Processing**: Document uploads enforce configurable guardrails (`MAX_UPLOAD_SIZE_MB`, `MAX_DOCUMENT_PAGES`, and `MAX_DOCUMENT_CHUNKS`) to reject excessively large files before they cause process restarts.
+* **Single Gunicorn Worker Configuration**: Gunicorn is configured with `--workers 1 --threads 2 --timeout 120` to avoid duplicating PyTorch and transformer memory footprints across multiple worker processes.
+* **Controlled Upload & Garbage Collection**: Temporary batch arrays and text buffers are explicitly unreferenced (`del`) and collected via `gc.collect()` following heavy ingestion operations.
 
 ## 🚀 Technology Stack
 

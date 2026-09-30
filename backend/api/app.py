@@ -32,11 +32,12 @@ nlp = NLPPredictor(model_path=os.path.join(os.path.dirname(__file__), '..', 'nlp
 dialog = DialogManager()
 
 # ── Uploads & RAG Configuration ───────────────────────────────────────────────
+MAX_UPLOAD_SIZE_MB = int(os.environ.get('MAX_UPLOAD_SIZE_MB', 10))
 UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', os.path.join(os.path.dirname(__file__), '..', 'uploads'))
 ALLOWED_EXTENSIONS = {'pdf', 'docx', 'doc', 'txt', 'md', 'csv', 'json', 'py', 'js', 'html'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB max
+app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
 def _allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -327,6 +328,14 @@ def upload_document():
     # Save to disk
     file.save(file_path)
     file_size = os.path.getsize(file_path)
+
+    if file_size > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+        return jsonify({"error": f"File size exceeds maximum limit of {MAX_UPLOAD_SIZE_MB}MB"}), 413
+
     ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else 'txt'
 
     db = dialog.state.Session()
@@ -346,19 +355,33 @@ def upload_document():
         from rag_service.embedding_service import get_embedding_service
         embed_svc = get_embedding_service()
 
-        chunks, total_pages = doc_proc.process_file(
-            file_path=file_path,
-            filename=filename,
-            document_id=doc.id,
-            user_id=username
-        )
+        try:
+            chunks, total_pages = doc_proc.process_file(
+                file_path=file_path,
+                filename=filename,
+                document_id=doc.id,
+                user_id=username
+            )
+        except ValueError as ve:
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+            db.delete(doc)
+            db.commit()
+            return jsonify({"error": str(ve)}), 400
 
         if chunks:
-            texts = [c["content"] for c in chunks]
-            embeddings = embed_svc.embed_texts(texts)
-            vec_store.add_chunks(user_id=username, new_chunks=chunks, embeddings=embeddings)
+            # Stream/batch embedding and indexing directly into FAISS (batch size 16)
+            # avoids holding all document embeddings in RAM simultaneously
+            vec_store.add_chunks_batched(
+                user_id=username,
+                chunks=chunks,
+                embedding_service=embed_svc,
+                batch_size=16
+            )
 
-            # Persist chunks to DB
+            # Persist chunk records to DB
             for c in chunks:
                 db_chunk = DocumentChunk(
                     document_id=doc.id,
@@ -379,6 +402,9 @@ def upload_document():
             doc.status = "empty"
 
         db.commit()
+        import gc
+        gc.collect()
+
         return jsonify({
             "message": f"Successfully indexed '{filename}' ({len(chunks)} chunks, {total_pages} page(s))",
             "document": doc.to_dict()
