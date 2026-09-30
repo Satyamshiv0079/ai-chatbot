@@ -1,8 +1,12 @@
+import logging
+import time
+from datetime import timedelta
+import sys, os
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
 from sqlalchemy import func
-import sys, os
+from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -14,11 +18,16 @@ from dialog_service.models import (
     Document, DocumentChunk
 )
 from auth.auth_routes import auth_bp
-from dotenv import load_dotenv
 
 load_dotenv()
 
-from datetime import timedelta
+# ── Structured Diagnostic Logging ─────────────────────────────────────────────
+logger = logging.getLogger("novamind.rag")
+if not logger.handlers:
+    _handler = logging.StreamHandler(sys.stdout)
+    _handler.setFormatter(logging.Formatter("[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"))
+    logger.addHandler(_handler)
+    logger.setLevel(logging.INFO)
 
 try:
     from api.rate_limiter import limiter
@@ -27,12 +36,25 @@ except ImportError:
 
 app = Flask(__name__)
 
+# ── CORS Configuration ────────────────────────────────────────────────────────
 frontend_url = os.environ.get('FRONTEND_URL')
 if frontend_url:
     origins = [o.strip() for o in frontend_url.split(',') if o.strip()]
 else:
-    origins = ["*"]
-CORS(app, resources={r"/*": {"origins": origins}}, allow_headers=["Content-Type", "Authorization"], methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+    # Explicit allowed origins for local dev and preview without wildcard
+    origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
+CORS(
+    app,
+    resources={r"/*": {"origins": origins}},
+    allow_headers=["Content-Type", "Authorization"],
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+)
 
 # ── JWT ───────────────────────────────────────────────────────────────────────
 is_production = os.environ.get('FLASK_ENV') == 'production' or os.environ.get('RENDER') == 'true' or os.environ.get('ENVIRONMENT') == 'production'
@@ -60,6 +82,18 @@ app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
 def _allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def _get_safe_user_dir(base_folder: str, user_id: str) -> str:
+    """Sanitizes user_id and ensures the resolved directory cannot escape base_folder."""
+    safe_user = "".join(c for c in str(user_id) if c.isalnum() or c in ("-", "_")).strip()
+    if not safe_user:
+        safe_user = "default_user"
+    user_dir = os.path.abspath(os.path.join(base_folder, safe_user))
+    base_canonical = os.path.abspath(base_folder)
+    if not user_dir.startswith(base_canonical):
+        raise ValueError("Path traversal attempt detected in user identifier")
+    os.makedirs(user_dir, exist_ok=True)
+    return user_dir
 
 _rag_pipeline = None
 _doc_processor = None
@@ -332,10 +366,12 @@ def chat():
 def upload_document():
     """
     Accepts multipart file upload (PDF, DOCX, TXT, MD, etc.),
-    extracts text, generates chunks and embeddings, saves to user's FAISS index,
-    and records metadata in the database.
+    validates file, extracts text, chunks and embeds, updates user's isolated FAISS index,
+    and commits database records with detailed diagnostic logging.
     """
+    start_time = time.time()
     username = get_jwt_identity()
+
     if 'file' not in request.files:
         return jsonify({"error": "No file part in request"}), 400
 
@@ -349,26 +385,49 @@ def upload_document():
 
     filename = secure_filename(file.filename)
     if not filename:
-        filename = "uploaded_document"
+        filename = f"upload_{int(time.time())}.txt"
 
-    user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], username)
-    os.makedirs(user_upload_dir, exist_ok=True)
-    file_path = os.path.join(user_upload_dir, filename)
+    ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else 'txt'
+
+    # Secure user upload path with path traversal defense
+    try:
+        user_upload_dir = _get_safe_user_dir(app.config['UPLOAD_FOLDER'], username)
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+
+    file_path = os.path.abspath(os.path.join(user_upload_dir, filename))
+    if not file_path.startswith(user_upload_dir):
+        return jsonify({"error": "Invalid upload path: path traversal detected"}), 400
 
     # Save to disk
     file.save(file_path)
     file_size = os.path.getsize(file_path)
+
+    logger.info(
+        "Document upload started: user_id='%s', filename='%s', extension='%s', size=%d bytes",
+        username, filename, ext, file_size
+    )
 
     if file_size > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
         try:
             os.remove(file_path)
         except OSError:
             pass
+        logger.warning(
+            "Upload rejected (file too large): user_id='%s', filename='%s', size=%d bytes",
+            username, filename, file_size
+        )
         return jsonify({"error": f"File size exceeds maximum limit of {MAX_UPLOAD_SIZE_MB}MB"}), 413
 
-    ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else 'txt'
+    if file_size == 0:
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+        return jsonify({"error": "The uploaded file is empty (0 bytes)."}), 400
 
     db = dialog.state.Session()
+    doc = None
     try:
         doc = Document(
             user_id=username,
@@ -393,45 +452,51 @@ def upload_document():
                 user_id=username
             )
         except ValueError as ve:
-            try:
-                os.remove(file_path)
-            except OSError:
-                pass
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except OSError:
+                    pass
             db.delete(doc)
             db.commit()
+            logger.warning(
+                "Document extraction rejected: user_id='%s', filename='%s', reason='%s'",
+                username, filename, str(ve)
+            )
             return jsonify({"error": str(ve)}), 400
 
-        if chunks:
-            # Stream/batch embedding and indexing directly into FAISS (batch size 16)
-            # avoids holding all document embeddings in RAM simultaneously
-            vec_store.add_chunks_batched(
+        # Memory-safe batch embedding and FAISS indexing
+        batch_size = 16
+        vec_store.add_chunks_batched(
+            user_id=username,
+            chunks=chunks,
+            embedding_service=embed_svc,
+            batch_size=batch_size
+        )
+
+        # Persist chunk records to DB
+        for c in chunks:
+            db_chunk = DocumentChunk(
+                document_id=doc.id,
                 user_id=username,
-                chunks=chunks,
-                embedding_service=embed_svc,
-                batch_size=16
+                chunk_index=c["chunk_index"],
+                page_number=c["page_number"],
+                content=c["content"],
+                metadata_json=str(c.get("metadata", {}))
             )
+            db.add(db_chunk)
 
-            # Persist chunk records to DB
-            for c in chunks:
-                db_chunk = DocumentChunk(
-                    document_id=doc.id,
-                    user_id=username,
-                    chunk_index=c["chunk_index"],
-                    page_number=c["page_number"],
-                    content=c["content"],
-                    metadata_json=str(c.get("metadata", {}))
-                )
-                db.add(db_chunk)
-
-            doc.chunk_count = len(chunks)
-            doc.page_count = total_pages
-            doc.status = "ready"
-        else:
-            doc.chunk_count = 0
-            doc.page_count = total_pages
-            doc.status = "empty"
-
+        doc.chunk_count = len(chunks)
+        doc.page_count = total_pages
+        doc.status = "ready"
         db.commit()
+
+        duration = round(time.time() - start_time, 2)
+        logger.info(
+            "Document indexed successfully: user_id='%s', doc_id=%d, filename='%s', chunks=%d, pages=%d, batch_size=%d, dimension=%d, duration=%.2fs",
+            username, doc.id, filename, len(chunks), total_pages, batch_size, embed_svc.dimension, duration
+        )
+
         import gc
         gc.collect()
 
@@ -441,7 +506,24 @@ def upload_document():
         }), 201
     except Exception as e:
         db.rollback()
-        return jsonify({"error": f"Failed to process document: {str(e)}"}), 500
+        if doc and getattr(doc, 'id', None):
+            try:
+                db.delete(doc)
+                db.commit()
+            except Exception:
+                pass
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+        logger.error(
+            "Document processing failed: user_id='%s', filename='%s', error=%s",
+            username, filename, str(e), exc_info=True
+        )
+        return jsonify({
+            "error": "Couldn't index this document. The file was uploaded, but document processing failed. Please verify the file is not corrupted and try again."
+        }), 500
     finally:
         db.close()
 
@@ -470,6 +552,7 @@ def delete_document(doc_id):
     """
     Deletes a document by ID: removes from FAISS vector store,
     deletes file from disk, and removes DB records.
+    Verifies document ownership strictly against authenticated JWT identity.
     """
     username = get_jwt_identity()
     db = dialog.state.Session()
@@ -483,8 +566,9 @@ def delete_document(doc_id):
         from rag_service.embedding_service import get_embedding_service
         vec_store.delete_document(user_id=username, doc_id=doc_id, embedding_service=get_embedding_service())
 
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], username, filename)
-        if os.path.exists(file_path):
+        user_upload_dir = _get_safe_user_dir(app.config['UPLOAD_FOLDER'], username)
+        file_path = os.path.abspath(os.path.join(user_upload_dir, secure_filename(filename)))
+        if os.path.exists(file_path) and file_path.startswith(user_upload_dir):
             try:
                 os.remove(file_path)
             except OSError:
@@ -492,7 +576,12 @@ def delete_document(doc_id):
 
         db.delete(doc)
         db.commit()
+        logger.info("Document deleted: user_id='%s', doc_id=%d, filename='%s'", username, doc_id, filename)
         return jsonify({"message": f"Document '{filename}' deleted successfully"})
+    except Exception as e:
+        db.rollback()
+        logger.error("Document delete failed: user_id='%s', doc_id=%d, error=%s", username, doc_id, str(e), exc_info=True)
+        return jsonify({"error": "Failed to delete document."}), 500
     finally:
         db.close()
 
@@ -507,14 +596,28 @@ def rag_query():
     invokes Groq LLM with fallback resilience, and returns answer + source citations.
     """
     username = get_jwt_identity()
-    data = request.get_json() or {}
-    query_text = data.get('query', '').strip()
+    data = request.get_json(silent=True) or {}
+    query_text = (data.get('query') or '').strip()
     if not query_text:
         return jsonify({"error": "Query is required"}), 400
 
     model = data.get('model', DEFAULT_MODEL)
     doc_ids = data.get('doc_ids', None)
     top_k = int(data.get('top_k', 4))
+
+    # IDOR protection: Verify any requested doc_ids belong to the authenticated user
+    if doc_ids and isinstance(doc_ids, list):
+        db = dialog.state.Session()
+        try:
+            valid_ids = {
+                r[0] for r in db.query(Document.id).filter(
+                    Document.id.in_(doc_ids), Document.user_id == username
+                ).all()
+            }
+            # If user specified doc_ids but owns none, pass [-1] so no chunks are retrieved
+            doc_ids = list(valid_ids) if valid_ids else [-1]
+        finally:
+            db.close()
 
     rag_pipe, _, _ = _get_rag_components()
     result = rag_pipe.query(

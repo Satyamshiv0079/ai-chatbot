@@ -21,11 +21,14 @@ class FAISSUserStore:
         self._lock = threading.Lock()
 
     def _user_dir(self, user_id: str) -> str:
-        # Sanitize user_id for filesystem safety
-        safe_user = "".join(c for c in user_id if c.isalnum() or c in ("-", "_")).strip()
+        # Sanitize user_id for filesystem safety - allow only alphanumeric, hyphen, underscore
+        safe_user = "".join(c for c in str(user_id) if c.isalnum() or c in ("-", "_")).strip()
         if not safe_user:
             safe_user = "default_user"
-        path = os.path.join(self.base_dir, safe_user)
+        path = os.path.abspath(os.path.join(self.base_dir, safe_user))
+        base_canonical = os.path.abspath(self.base_dir)
+        if not path.startswith(base_canonical):
+            raise ValueError("Path traversal attempt detected in user identifier")
         os.makedirs(path, exist_ok=True)
         return path
 
@@ -53,11 +56,17 @@ class FAISSUserStore:
                 with open(json_path, "r", encoding="utf-8") as f:
                     chunks = json.load(f)
             elif os.path.exists(pkl_path):
-                # Safe backward-compatible migration from pickle to JSON
+                # Validate legacy path before opening
+                user_dir = self._user_dir(user_id)
+                if not os.path.abspath(pkl_path).startswith(user_dir):
+                    raise ValueError("Untrusted legacy metadata path detected")
                 with open(pkl_path, "rb") as f:
                     chunks = pickle.load(f)
-                with open(json_path, "w", encoding="utf-8") as f:
+                # Atomically write migrated JSON
+                tmp_json = json_path + ".tmp"
+                with open(tmp_json, "w", encoding="utf-8") as f:
                     json.dump(chunks, f, ensure_ascii=False)
+                os.replace(tmp_json, json_path)
                 try:
                     os.remove(pkl_path)
                 except OSError:
@@ -74,9 +83,28 @@ class FAISSUserStore:
         json_path = self._chunks_path(user_id)
         pkl_path = self._legacy_chunks_path(user_id)
 
-        faiss.write_index(index, idx_path)
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(chunks, f, ensure_ascii=False)
+        # Atomic persistence via temporary files prevents index corruption on process crash/kill
+        tmp_idx = idx_path + ".tmp"
+        tmp_json = json_path + ".tmp"
+
+        try:
+            faiss.write_index(index, tmp_idx)
+            with open(tmp_json, "w", encoding="utf-8") as f:
+                json.dump(chunks, f, ensure_ascii=False)
+            os.replace(tmp_idx, idx_path)
+            os.replace(tmp_json, json_path)
+        finally:
+            if os.path.exists(tmp_idx):
+                try:
+                    os.remove(tmp_idx)
+                except OSError:
+                    pass
+            if os.path.exists(tmp_json):
+                try:
+                    os.remove(tmp_json)
+                except OSError:
+                    pass
+
         if os.path.exists(pkl_path):
             try:
                 os.remove(pkl_path)

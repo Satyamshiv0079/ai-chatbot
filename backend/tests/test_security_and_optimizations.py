@@ -116,3 +116,45 @@ def test_jwt_access_token_expires_setting():
     from datetime import timedelta
     assert isinstance(app.config['JWT_ACCESS_TOKEN_EXPIRES'], timedelta)
     assert app.config['JWT_ACCESS_TOKEN_EXPIRES'].total_seconds() > 0
+
+
+def test_document_ownership_idor(auth_fixture):
+    client, headers_a, headers_b = auth_fixture
+    import io
+
+    # Alice uploads a text document
+    data_a = {'file': (io.BytesIO(b"Confidential project report for Alice."), 'alice_doc.txt')}
+    res_upload = client.post('/api/documents/upload', data=data_a, headers={'Authorization': headers_a['Authorization']}, content_type='multipart/form-data')
+    assert res_upload.status_code == 201
+    doc_id_a = res_upload.json['document']['id']
+
+    # Bob attempts to delete Alice's document (IDOR attack)
+    res_delete_b = client.delete(f'/api/documents/{doc_id_a}', headers=headers_b)
+    # Must be 404
+    assert res_delete_b.status_code == 404
+
+    # Alice can delete her own document
+    res_delete_a = client.delete(f'/api/documents/{doc_id_a}', headers=headers_a)
+    assert res_delete_a.status_code == 200
+
+
+def test_empty_file_upload_rejected(auth_fixture):
+    client, headers_a, _ = auth_fixture
+    import io
+
+    # 0-byte file
+    data_empty = {'file': (io.BytesIO(b""), 'empty.txt')}
+    res = client.post('/api/documents/upload', data=data_empty, headers={'Authorization': headers_a['Authorization']}, content_type='multipart/form-data')
+    assert res.status_code == 400
+    assert "empty" in res.json['error'].lower()
+
+
+def test_path_traversal_sanitization():
+    from api.app import _get_safe_user_dir
+    import tempfile
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Malicious traversal attempts
+        safe_path = _get_safe_user_dir(temp_dir, "../../../evil/user")
+        assert "eviluser" in safe_path
+        assert safe_path.startswith(os.path.abspath(temp_dir))
+        assert ".." not in safe_path

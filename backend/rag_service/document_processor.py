@@ -69,15 +69,38 @@ class DocumentProcessor:
         Extracts text from PDF page by page.
         Returns (list_of_pages, total_pages) where each page has {"page_number": int, "text": str}.
         """
-        pages_data = []
-        reader = pypdf.PdfReader(file_path)
-        total_pages = len(reader.pages)
+        try:
+            reader = pypdf.PdfReader(file_path)
+        except Exception as e:
+            raise ValueError(f"Could not read PDF file: the file may be corrupted or not a valid PDF.")
 
+        if getattr(reader, "is_encrypted", False):
+            try:
+                decrypted = reader.decrypt("")
+                if decrypted == 0:
+                    raise ValueError("Could not extract readable text from this PDF: the document is password-protected.")
+            except Exception:
+                raise ValueError("Could not extract readable text from this PDF: the document is password-protected.")
+
+        total_pages = len(reader.pages)
+        if total_pages == 0:
+            raise ValueError("Could not extract readable text from this PDF: the document contains 0 pages.")
+
+        pages_data = []
         for i, page in enumerate(reader.pages):
-            text = page.extract_text() or ""
+            try:
+                text = page.extract_text() or ""
+            except Exception:
+                text = ""
             text = text.strip()
             if text:
                 pages_data.append({"page_number": i + 1, "text": text})
+
+        if not pages_data:
+            raise ValueError(
+                "Could not extract readable text from this PDF. "
+                "The document may be empty, image-only/scanned, or password-protected."
+            )
 
         return pages_data, total_pages
 
@@ -86,7 +109,11 @@ class DocumentProcessor:
         Extracts paragraphs and tables from DOCX.
         Returns (list_of_sections, total_sections).
         """
-        doc = docx.Document(file_path)
+        try:
+            doc = docx.Document(file_path)
+        except Exception as e:
+            raise ValueError(f"Could not read Word document (.docx): the file may be corrupted or not a valid DOCX.")
+
         paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
         
         # Also extract table cells
@@ -96,9 +123,9 @@ class DocumentProcessor:
                 if row_text:
                     paragraphs.append(row_text)
 
-        full_text = "\n\n".join(paragraphs)
+        full_text = "\n\n".join(paragraphs).strip()
         if not full_text:
-            return [], 1
+            raise ValueError("Could not extract readable text from this Word document. The file is empty.")
 
         # Treat docx sections/pages
         return [{"page_number": 1, "text": full_text}], 1
@@ -117,7 +144,7 @@ class DocumentProcessor:
 
         text = text.strip()
         if not text:
-            return [], 1
+            raise ValueError("The uploaded text document is empty.")
         return [{"page_number": 1, "text": text}], 1
 
     def process_file(
@@ -190,5 +217,10 @@ class DocumentProcessor:
                     "metadata": metadata
                 })
                 chunk_idx += 1
+
+        if not all_chunks:
+            raise ValueError(
+                "Could not extract sufficient readable text from this document to index."
+            )
 
         return all_chunks, max(total_pages, 1)
