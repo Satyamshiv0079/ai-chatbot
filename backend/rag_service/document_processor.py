@@ -12,6 +12,8 @@ except ImportError:
         RecursiveCharacterTextSplitter = None
 
 
+DEFAULT_CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", 800))
+DEFAULT_CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", 120))
 MAX_DOCUMENT_PAGES = int(os.environ.get("MAX_DOCUMENT_PAGES", 100))
 MAX_DOCUMENT_CHUNKS = int(os.environ.get("MAX_DOCUMENT_CHUNKS", 500))
 
@@ -23,13 +25,13 @@ class DocumentProcessor:
     """
     def __init__(
         self,
-        chunk_size: int = 800,
-        chunk_overlap: int = 120,
+        chunk_size: Optional[int] = None,
+        chunk_overlap: Optional[int] = None,
         max_pages: Optional[int] = None,
         max_chunks: Optional[int] = None
     ):
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
+        self.chunk_size = chunk_size or DEFAULT_CHUNK_SIZE
+        self.chunk_overlap = chunk_overlap or DEFAULT_CHUNK_OVERLAP
         self.max_pages = max_pages or MAX_DOCUMENT_PAGES
         self.max_chunks = max_chunks or MAX_DOCUMENT_CHUNKS
 

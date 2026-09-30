@@ -14,6 +14,11 @@ from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identi
 from dialog_service.models import User
 from dialog_service.state_manager import ConversationState
 
+try:
+    from api.rate_limiter import limiter
+except ImportError:
+    from rate_limiter import limiter
+
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
 # Re-use the same DB session as the rest of the app
@@ -24,6 +29,7 @@ def get_db():
 
 
 @auth_bp.route('/register', methods=['POST'])
+@limiter.limit(max_requests=10, window_seconds=60)
 def register():
     data = request.get_json()
 
@@ -64,6 +70,7 @@ def register():
 
 
 @auth_bp.route('/login', methods=['POST'])
+@limiter.limit(max_requests=10, window_seconds=60)
 def login():
     data = request.get_json()
 

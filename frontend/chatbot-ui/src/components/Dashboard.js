@@ -3,14 +3,17 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { MessageSquare, Users, Activity, BarChart2 } from 'lucide-react';
 import './Dashboard.css';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:5000';
+
 const Dashboard = () => {
   const [stats, setStats] = useState(null);
 
   useEffect(() => {
-    // In a real app, use an environment variable for the API base URL
-    fetch('http://localhost:5000/api/dashboard/stats', {
+    const token = localStorage.getItem('authToken');
+    fetch(`${API_URL}/api/dashboard/stats`, {
       headers: {
-        'X-API-Key': 'chatbot-secure-key-2026'
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
       }
     })
       .then(res => res.json())
@@ -84,13 +87,16 @@ const Dashboard = () => {
         <div className="activity-card glass-card">
           <h3>Recent Activity</h3>
           <ul className="activity-list">
-            {stats.recent_activity.map((act, i) => (
+            {(stats.recent_activity || []).map((act, i) => (
               <li key={i} className="activity-item">
                 <span className="activity-intent">{act.intent}</span>
                 <span className="activity-text">"{act.user}"</span>
-                <span className="activity-time">{new Date(act.time).toLocaleTimeString()}</span>
+                <span className="activity-time">{act.time ? new Date(act.time).toLocaleTimeString() : ''}</span>
               </li>
             ))}
+            {(!stats.recent_activity || stats.recent_activity.length === 0) && (
+              <li className="activity-item" style={{ color: '#888', fontStyle: 'italic' }}>No recent activity recorded yet.</li>
+            )}
           </ul>
         </div>
       </div>

@@ -18,12 +18,31 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from datetime import timedelta
+
+try:
+    from api.rate_limiter import limiter
+except ImportError:
+    from rate_limiter import limiter
+
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}}, allow_headers=["Content-Type", "Authorization"], methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+
+frontend_url = os.environ.get('FRONTEND_URL')
+if frontend_url:
+    origins = [o.strip() for o in frontend_url.split(',') if o.strip()]
+else:
+    origins = ["*"]
+CORS(app, resources={r"/*": {"origins": origins}}, allow_headers=["Content-Type", "Authorization"], methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
 
 # ── JWT ───────────────────────────────────────────────────────────────────────
-app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'dev-secret-change-in-production')
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = False
+is_production = os.environ.get('FLASK_ENV') == 'production' or os.environ.get('RENDER') == 'true' or os.environ.get('ENVIRONMENT') == 'production'
+jwt_secret = os.environ.get('JWT_SECRET_KEY')
+if is_production and (not jwt_secret or jwt_secret == 'dev-secret-change-in-production'):
+    raise RuntimeError("JWT_SECRET_KEY environment variable MUST be set to a secure string in production environments!")
+
+app.config['JWT_SECRET_KEY'] = jwt_secret or 'dev-secret-change-in-production'
+jwt_exp_hours = int(os.environ.get('JWT_ACCESS_TOKEN_EXPIRES_HOURS', 2))
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=jwt_exp_hours)
 jwt = JWTManager(app)
 
 app.register_blueprint(auth_bp)
@@ -244,6 +263,7 @@ def list_models():
 
 @app.route('/chat', methods=['POST'])
 @jwt_required()
+@limiter.limit(max_requests=30, window_seconds=60)
 def chat():
     username = get_jwt_identity()
     data = request.get_json(silent=True) or {}
@@ -254,6 +274,15 @@ def chat():
     user_message = data['message']
     session_id = data.get('session_id')
     model = data.get('model', DEFAULT_MODEL)
+
+    if session_id:
+        db = dialog.state.Session()
+        try:
+            s = db.query(UserSession).filter_by(session_id=session_id).first()
+            if s and s.user_id and s.user_id != username:
+                return jsonify({"error": "Forbidden: Session belongs to another user"}), 403
+        finally:
+            db.close()
 
     # Validate model — use first available from live list if requested one isn't accessible
     available = _fetch_groq_models()
@@ -299,6 +328,7 @@ def chat():
 # ── RAG & Document Management ─────────────────────────────────────────────────
 @app.route('/api/documents/upload', methods=['POST'])
 @jwt_required()
+@limiter.limit(max_requests=10, window_seconds=60)
 def upload_document():
     """
     Accepts multipart file upload (PDF, DOCX, TXT, MD, etc.),
@@ -469,6 +499,7 @@ def delete_document(doc_id):
 
 @app.route('/api/rag/query', methods=['POST'])
 @jwt_required()
+@limiter.limit(max_requests=30, window_seconds=60)
 def rag_query():
     """
     Mode B (RAG / Ask My Documents):
@@ -506,20 +537,67 @@ def rag_query():
 @app.route('/api/dashboard/stats', methods=['GET'])
 @jwt_required()
 def dashboard_stats():
+    username = get_jwt_identity()
     db = dialog.state.Session()
     try:
-        total_sessions = db.query(UserSession).count()
-        total_messages = db.query(ConversationHistory).count()
-        intent_counts = db.query(
-            ConversationHistory.intent, func.count(ConversationHistory.id)
-        ).group_by(ConversationHistory.intent).all()
+        # Strictly user-isolated statistics
+        total_sessions = db.query(UserSession).filter_by(user_id=username).count()
+        total_messages = (
+            db.query(ConversationHistory)
+            .join(UserSession, ConversationHistory.session_id == UserSession.session_id)
+            .filter(UserSession.user_id == username)
+            .count()
+        )
+        intent_counts = (
+            db.query(ConversationHistory.intent, func.count(ConversationHistory.id))
+            .join(UserSession, ConversationHistory.session_id == UserSession.session_id)
+            .filter(UserSession.user_id == username)
+            .group_by(ConversationHistory.intent)
+            .all()
+        )
+        total_documents = db.query(Document).filter_by(user_id=username).count()
+
+        recent_records = (
+            db.query(ConversationHistory)
+            .join(UserSession, ConversationHistory.session_id == UserSession.session_id)
+            .filter(UserSession.user_id == username)
+            .order_by(ConversationHistory.timestamp.desc())
+            .limit(5)
+            .all()
+        )
+        recent_activity = [{
+            "intent": r.intent or "general",
+            "user": r.user_text[:30] if r.user_text else "",
+            "time": r.timestamp.isoformat() if r.timestamp else ""
+        } for r in recent_records]
+
         return jsonify({
             "total_sessions": total_sessions,
             "total_messages": total_messages,
+            "total_documents": total_documents,
             "intents_distribution": [{"name": i[0] or "unknown", "value": i[1]} for i in intent_counts],
+            "recent_activity": recent_activity
         })
     finally:
         db.close()
+
+
+# ── Global Error Handlers ─────────────────────────────────────────────────────
+@app.errorhandler(400)
+def bad_request(e):
+    return jsonify({"error": getattr(e, 'description', "Bad request"), "status_code": 400}), 400
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"error": "Resource not found", "status_code": 404}), 404
+
+@app.errorhandler(413)
+def entity_too_large(e):
+    return jsonify({"error": f"File size exceeds maximum upload limit of {MAX_UPLOAD_SIZE_MB}MB", "status_code": 413}), 413
+
+@app.errorhandler(500)
+def server_error(e):
+    return jsonify({"error": "An internal server error occurred", "status_code": 500}), 500
 
 
 if __name__ == '__main__':

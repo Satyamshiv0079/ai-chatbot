@@ -1,4 +1,5 @@
 import os
+import json
 import pickle
 import threading
 from typing import List, Dict, Any, Optional
@@ -10,9 +11,9 @@ DEFAULT_BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 
 class FAISSUserStore:
     """
-    Manages per-user FAISS vector stores with strict isolation.
+    Manages per-user FAISS vector stores with strict multi-tenant isolation.
     Each user has a dedicated directory: vector_stores/<user_id>/
-    containing 'index.faiss' and 'chunks.pkl'.
+    containing 'index.faiss' and 'chunks.json' (secure JSON metadata storage).
     """
     def __init__(self, base_dir: Optional[str] = None):
         self.base_dir = os.environ.get("VECTOR_STORE_PATH", base_dir or DEFAULT_BASE_DIR)
@@ -32,19 +33,37 @@ class FAISSUserStore:
         return os.path.join(self._user_dir(user_id), "index.faiss")
 
     def _chunks_path(self, user_id: str) -> str:
+        return os.path.join(self._user_dir(user_id), "chunks.json")
+
+    def _legacy_chunks_path(self, user_id: str) -> str:
         return os.path.join(self._user_dir(user_id), "chunks.pkl")
 
     def _load_user_data(self, user_id: str) -> tuple[Optional[faiss.IndexFlatIP], List[Dict[str, Any]]]:
         idx_path = self._index_path(user_id)
-        chunks_path = self._chunks_path(user_id)
+        json_path = self._chunks_path(user_id)
+        pkl_path = self._legacy_chunks_path(user_id)
 
-        if not os.path.exists(idx_path) or not os.path.exists(chunks_path):
+        if not os.path.exists(idx_path):
             return None, []
 
         try:
             index = faiss.read_index(idx_path)
-            with open(chunks_path, "rb") as f:
-                chunks = pickle.load(f)
+            chunks = []
+            if os.path.exists(json_path):
+                with open(json_path, "r", encoding="utf-8") as f:
+                    chunks = json.load(f)
+            elif os.path.exists(pkl_path):
+                # Safe backward-compatible migration from pickle to JSON
+                with open(pkl_path, "rb") as f:
+                    chunks = pickle.load(f)
+                with open(json_path, "w", encoding="utf-8") as f:
+                    json.dump(chunks, f, ensure_ascii=False)
+                try:
+                    os.remove(pkl_path)
+                except OSError:
+                    pass
+            else:
+                return None, []
             return index, chunks
         except Exception as e:
             print(f"[FAISSUserStore] Error loading index for user {user_id}: {e}")
@@ -52,11 +71,17 @@ class FAISSUserStore:
 
     def _save_user_data(self, user_id: str, index: faiss.IndexFlatIP, chunks: List[Dict[str, Any]]):
         idx_path = self._index_path(user_id)
-        chunks_path = self._chunks_path(user_id)
+        json_path = self._chunks_path(user_id)
+        pkl_path = self._legacy_chunks_path(user_id)
 
         faiss.write_index(index, idx_path)
-        with open(chunks_path, "wb") as f:
-            pickle.dump(chunks, f)
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(chunks, f, ensure_ascii=False)
+        if os.path.exists(pkl_path):
+            try:
+                os.remove(pkl_path)
+            except OSError:
+                pass
 
     def add_chunks(self, user_id: str, new_chunks: List[Dict[str, Any]], embeddings: np.ndarray):
         """
@@ -187,11 +212,14 @@ class FAISSUserStore:
             if not remaining_chunks:
                 # Remove all files
                 idx_path = self._index_path(user_id)
-                chunks_path = self._chunks_path(user_id)
-                if os.path.exists(idx_path):
-                    os.remove(idx_path)
-                if os.path.exists(chunks_path):
-                    os.remove(chunks_path)
+                json_path = self._chunks_path(user_id)
+                pkl_path = self._legacy_chunks_path(user_id)
+                for p in (idx_path, json_path, pkl_path):
+                    if os.path.exists(p):
+                        try:
+                            os.remove(p)
+                        except OSError:
+                            pass
                 print(f"[FAISSUserStore] Deleted doc {doc_id}. Vector store for user '{user_id}' is now empty.")
                 return
 
@@ -223,8 +251,11 @@ class FAISSUserStore:
     def clear_user_store(self, user_id: str):
         with self._lock:
             idx_path = self._index_path(user_id)
-            chunks_path = self._chunks_path(user_id)
-            if os.path.exists(idx_path):
-                os.remove(idx_path)
-            if os.path.exists(chunks_path):
-                os.remove(chunks_path)
+            json_path = self._chunks_path(user_id)
+            pkl_path = self._legacy_chunks_path(user_id)
+            for p in (idx_path, json_path, pkl_path):
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass

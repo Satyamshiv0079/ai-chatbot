@@ -38,11 +38,11 @@ class User(Base):
 class UserSession(Base):
     __tablename__ = 'user_sessions'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String, unique=True, nullable=False)
-    user_id = Column(String, nullable=False, default="anonymous")
+    session_id = Column(String, unique=True, nullable=False, index=True)
+    user_id = Column(String, nullable=False, default="anonymous", index=True)
     title = Column(String(100), nullable=True, default="New Chat")
     status = Column(String, nullable=False, default="Active")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
     # Relationships
     histories = relationship("ConversationHistory", back_populates="session", cascade="all, delete-orphan")
@@ -50,10 +50,10 @@ class UserSession(Base):
 class ConversationHistory(Base):
     __tablename__ = 'conversation_history'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String, ForeignKey('user_sessions.session_id'), nullable=False)
+    session_id = Column(String, ForeignKey('user_sessions.session_id'), nullable=False, index=True)
     user_text = Column(Text, nullable=False)
     intent = Column(String, nullable=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
 
     # Relationships
     session = relationship("UserSession", back_populates="histories")
